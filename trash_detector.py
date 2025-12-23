@@ -10,6 +10,7 @@ import cv2
 import base64
 import json
 import random
+import numpy as np
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -54,7 +55,8 @@ MODEL_ALTERNATIVES = [
 CATEGORY_EMOJI = {
     'Organic': '🍃',
     'Recyclables': '♻️',
-    'Landfill': '🗑️'
+    'Landfill': '🗑️',
+    'Dangerous': '⚠️'
 }
 
 # Eleven Labs Voice IDs - Spanish-friendly voices for variety
@@ -704,6 +706,13 @@ class TrashDetector:
                 
                 # Check for capture
                 if key == ord('c') or key == ord('C'):
+                    # Flash green screen for visual feedback
+                    height, width = frame.shape[:2]
+                    green_flash = np.zeros((height, width, 3), dtype=np.uint8)
+                    green_flash[:] = (0, 255, 0)  # Green color (BGR format)
+                    cv2.imshow("Trash Detector - Interactive Mode", green_flash)
+                    cv2.waitKey(100)  # Show green flash for 100ms
+                    
                     print("\n" + "-"*60)
                     print("CAPTURING AND ANALYZING...")
                     print("-"*60)
@@ -732,6 +741,23 @@ class TrashDetector:
                     if self.gpio_enabled:
                         self.trigger_hardware_output(results.get('detected', False))
                     
+                    # Show category-based color flash for visual feedback
+                    category = results.get('category')
+                    if category:
+                        height, width = frame.shape[:2]
+                        # Define colors in BGR format
+                        category_colors = {
+                            'Organic': (0, 165, 255),      # Orange (BGR)
+                            'Recyclables': (255, 0, 0),    # Blue (BGR)
+                            'Landfill': (128, 128, 128),  # Gray (BGR)
+                            'Dangerous': (0, 0, 255)       # Red (BGR) - for dangerous items
+                        }
+                        flash_color = category_colors.get(category, (128, 128, 128))
+                        category_flash = np.zeros((height, width, 3), dtype=np.uint8)
+                        category_flash[:] = flash_color
+                        cv2.imshow("Trash Detector - Interactive Mode", category_flash)
+                        cv2.waitKey(2000)  # Show color flash for 2 seconds
+                    
                     # Show result on frame briefly
                     if results.get('detected'):
                         result_text = "TRASH DETECTED!"
@@ -748,7 +774,8 @@ class TrashDetector:
                             category_colors = {
                                 'Organic': (0, 255, 0),      # Green
                                 'Recyclables': (255, 165, 0), # Orange
-                                'Landfill': (0, 165, 255)     # Blue
+                                'Landfill': (0, 165, 255),    # Blue
+                                'Dangerous': (0, 0, 255)      # Red
                             }
                             category_color = category_colors.get(category, (255, 255, 255))
                             y_pos += 40
