@@ -33,6 +33,13 @@ cd /path/to/detector
 pip3 install -r requirements.txt
 ```
 
+**Note:** The project uses the new `google-genai` package. If you see deprecation warnings, install it with:
+```bash
+pip3 install google-genai
+```
+
+The code will automatically fall back to `google-generativeai` if the new package isn't available, but deprecation warnings are suppressed.
+
 For Raspberry Pi, you might need to install system dependencies first:
 
 ```bash
@@ -81,8 +88,12 @@ Available options:
 - `--api-key`: Override API key from environment variable
 - `--camera`: Camera index (default: 0, use 1, 2, etc. for USB cameras)
 - `--model`: Gemini model name (default: gemini-1.5-flash)
+- `--list-models`: List available models and exit
 - `--output-dir`: Output directory (default: output)
 - `--no-save`: Don't save captured images
+- `--gpio`: Enable GPIO hardware outputs (LED, buzzer)
+- `--led-pin`: GPIO pin for LED (default: 18)
+- `--buzzer-pin`: GPIO pin for buzzer (optional)
 
 ### Examples
 
@@ -95,6 +106,16 @@ python3 trash_detector.py --camera 1
 ```bash
 python3 trash_detector.py --model gemini-1.5-pro
 ```
+
+**List available models:**
+```bash
+python3 trash_detector.py --list-models
+```
+
+This will show you all available models that support vision/generateContent. Common model names:
+- `gemini-1.5-flash` (fast, recommended)
+- `gemini-1.5-pro` (more capable)
+- `gemini-pro-vision` (older, but widely supported)
 
 **Don't save images:**
 ```bash

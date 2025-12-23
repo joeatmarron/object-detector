@@ -11,8 +11,13 @@ import base64
 import json
 from datetime import datetime
 from pathlib import Path
-import google.generativeai as genai
 from dotenv import load_dotenv
+
+# Use google.genai package (required)
+try:
+    import google.genai as genai
+except ImportError:
+    raise ImportError("google.genai package is required. Install with: pip3 install google-genai")
 
 # Optional GPIO support for Raspberry Pi hardware outputs
 try:
@@ -32,7 +37,8 @@ class TrashDetector:
         
         Args:
             api_key: Google Gemini API key (or set GEMINI_API_KEY env var)
-            model_name: Gemini model to use (default: gemini-1.5-flash)
+            model_name: Gemini model to use (default: gemini-2.0-flash-exp)
+                       Common options: gemini-2.0-flash-exp, gemini-1.5-pro, gemini-pro-vision
             enable_gpio: Enable GPIO hardware outputs (LED, buzzer, etc.)
             led_pin: GPIO pin number for LED (default: 18, BCM numbering)
             buzzer_pin: GPIO pin number for buzzer (optional, None to disable)
@@ -41,8 +47,16 @@ class TrashDetector:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not found. Set it in .env file or pass as argument.")
         
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel(model_name)
+        # Initialize google.genai client
+        self.model_name = model_name
+        
+        try:
+            self.client = genai.Client(api_key=self.api_key)
+            print(f"Using google.genai package with model: {model_name}")
+            # Model validation will happen when we try to use it
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize google.genai client: {e}")
+        
         self.camera = None
         
         # GPIO setup
@@ -64,6 +78,16 @@ class TrashDetector:
                   (f", Buzzer on pin {self.buzzer_pin}" if self.buzzer_pin else ""))
         elif enable_gpio and not GPIO_AVAILABLE:
             print("Warning: GPIO requested but RPi.GPIO not available. Install with: pip3 install RPi.GPIO")
+    
+    def _list_available_models(self):
+        """List available models from the API"""
+        try:
+            models = self.client.models.list()
+            model_list = list(models) if hasattr(models, '__iter__') else []
+            return [getattr(m, 'name', str(m)) for m in model_list]
+        except Exception as e:
+            print(f"Error listing models: {e}")
+            return []
         
     def initialize_camera(self, camera_index=0):
         """
@@ -142,22 +166,197 @@ Please provide:
 
 Format your response as JSON with these fields."""
         
-        # Convert image to base64
-        image_base64 = self.image_to_base64(image)
-        
-        # Prepare the image for Gemini
-        image_data = {
-            "mime_type": "image/jpeg",
-            "data": base64.b64decode(image_base64)
-        }
+        # Convert image to format compatible with Gemini API
+        # Try PIL Image first (preferred)
+        try:
+            from PIL import Image
+            # Convert OpenCV image (BGR) to RGB for PIL
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(image_rgb)
+            
+            # Call google.genai API - use proper Content structure
+            try:
+                # The API expects Content objects with Parts
+                # Try importing types first
+                try:
+                    from google.genai.types import Content, Part
+                    # Create Content with Parts
+                    content = Content(
+                        parts=[
+                            Part(text=prompt),
+                            Part(inline_data=pil_image)
+                        ]
+                    )
+                    response = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=[content]
+                    )
+                except (ImportError, AttributeError, TypeError) as type_error:
+                    # If types don't work, try simple format
+                    response = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=[prompt, pil_image]
+                    )
+                
+                # Extract text from response
+                response_text = response.text if hasattr(response, 'text') else str(response)
+            except Exception as api_error:
+                error_str = str(api_error)
+                # If model not found, try alternatives
+                if "404" in error_str or "not found" in error_str.lower():
+                    print(f"Model '{self.model_name}' not found. Trying alternatives...")
+                    alternatives = [
+                        "gemini-2.0-flash-exp",
+                        "gemini-1.5-flash",
+                        "gemini-1.5-pro",
+                        "gemini-pro-vision",
+                        "gemini-pro",
+                    ]
+                    
+                    for alt_model in alternatives:
+                        if alt_model == self.model_name:
+                            continue
+                        try:
+                            print(f"Trying model: {alt_model}")
+                            response = self.client.models.generate_content(
+                                model=alt_model,
+                                contents=[prompt, pil_image]
+                            )
+                            self.model_name = alt_model
+                            print(f"Successfully using model: {alt_model}")
+                            response_text = response.text if hasattr(response, 'text') else str(response)
+                            break
+                        except Exception:
+                            continue
+                    else:
+                        # All alternatives failed
+                        raise RuntimeError(
+                            f"Failed to find a working model. "
+                            f"Original error: {error_str[:200]}. "
+                            f"Use --list-models to see available models."
+                        )
+                else:
+                    # Other error, re-raise
+                    raise api_error
+                
+        except (ImportError, Exception) as e:
+            # Fallback to base64 format
+            image_base64 = self.image_to_base64(image)
+            image_bytes = base64.b64decode(image_base64)
+            
+            # Try different base64 formats for google.genai API
+            try:
+                # Try with Content and Part objects
+                try:
+                    from google.genai.types import Content, Part, Blob
+                    blob = Blob(data=image_bytes, mime_type="image/jpeg")
+                    content = Content(
+                        parts=[
+                            Part(text=prompt),
+                            Part(inline_data=blob)
+                        ]
+                    )
+                    response = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=[content]
+                    )
+                except (ImportError, AttributeError, TypeError):
+                    # Try creating a File from bytes
+                    try:
+                        import io
+                        from google.genai import File
+                        # Create a file-like object from bytes
+                        image_file = io.BytesIO(image_bytes)
+                        uploaded_file = self.client.files.upload(path=None, file=image_file)
+                        response = self.client.models.generate_content(
+                            model=self.model_name,
+                            contents=[prompt, uploaded_file]
+                        )
+                    except Exception:
+                        # Last resort: try dict format
+                        response = self.client.models.generate_content(
+                            model=self.model_name,
+                            contents=[{
+                                "parts": [
+                                    {"text": prompt},
+                                    {
+                                        "inline_data": {
+                                            "mime_type": "image/jpeg",
+                                            "data": image_bytes
+                                        }
+                                    }
+                                ]
+                            }]
+                        )
+                
+                response_text = response.text if hasattr(response, 'text') else str(response)
+            except Exception as api_error:
+                error_str = str(api_error)
+                # If model not found, try alternatives
+                if "404" in error_str or "not found" in error_str.lower():
+                    print(f"Model '{self.model_name}' not found. Trying alternatives...")
+                    alternatives = [
+                        "gemini-2.0-flash-exp",
+                        "gemini-1.5-flash",
+                        "gemini-1.5-pro",
+                        "gemini-pro-vision",
+                        "gemini-pro",
+                    ]
+                    
+                    for alt_model in alternatives:
+                        if alt_model == self.model_name:
+                            continue
+                        try:
+                            print(f"Trying model: {alt_model}")
+                            # Try with Content/Part first
+                            try:
+                                from google.genai.types import Content, Part, Blob
+                                blob = Blob(data=image_bytes, mime_type="image/jpeg")
+                                content = Content(
+                                    parts=[
+                                        Part(text=prompt),
+                                        Part(inline_data=blob)
+                                    ]
+                                )
+                                response = self.client.models.generate_content(
+                                    model=alt_model,
+                                    contents=[content]
+                                )
+                            except (ImportError, AttributeError, TypeError):
+                                # Fallback to simple format
+                                response = self.client.models.generate_content(
+                                    model=alt_model,
+                                    contents=[prompt, {
+                                        "mime_type": "image/jpeg",
+                                        "data": image_bytes
+                                    }]
+                                )
+                            
+                            self.model_name = alt_model
+                            print(f"Successfully using model: {alt_model}")
+                            response_text = response.text if hasattr(response, 'text') else str(response)
+                            break
+                        except Exception:
+                            continue
+                    else:
+                        # All alternatives failed
+                        return {
+                            "timestamp": datetime.now().isoformat(),
+                            "error": f"Failed to find a working model. Original error: {error_str[:200]}",
+                            "detected": False
+                        }
+                else:
+                    # Other error
+                    return {
+                        "timestamp": datetime.now().isoformat(),
+                        "error": f"Failed to call google.genai API: {error_str[:200]}",
+                        "detected": False
+                    }
         
         try:
-            # Call Gemini API
-            response = self.model.generate_content([prompt, image_data])
-            
             result = {
                 "timestamp": datetime.now().isoformat(),
-                "raw_response": response.text,
+                "raw_response": response_text,
                 "detected": False,
                 "trash_type": None,
                 "confidence": None,
@@ -168,7 +367,7 @@ Format your response as JSON with these fields."""
             # Try to parse JSON from response
             try:
                 # Extract JSON from response if it's wrapped in markdown
-                text = response.text.strip()
+                text = response_text.strip()
                 if "```json" in text:
                     text = text.split("```json")[1].split("```")[0].strip()
                 elif "```" in text:
@@ -179,7 +378,7 @@ Format your response as JSON with these fields."""
                 result["detected"] = parsed.get("Is trash/litter detected?", "").lower().startswith("yes")
             except (json.JSONDecodeError, KeyError):
                 # If JSON parsing fails, extract info from text
-                text_lower = response.text.lower()
+                text_lower = response_text.lower()
                 result["detected"] = "yes" in text_lower or "trash" in text_lower or "litter" in text_lower
             
             return result
@@ -296,7 +495,9 @@ def main():
     parser = argparse.ArgumentParser(description="Trash Detector using Gemini Vision API")
     parser.add_argument("--api-key", type=str, help="Google Gemini API key (or set GEMINI_API_KEY env var)")
     parser.add_argument("--camera", type=int, default=0, help="Camera index (default: 0)")
-    parser.add_argument("--model", type=str, default="gemini-1.5-flash", help="Gemini model name")
+    parser.add_argument("--model", type=str, default="gemini-2.0-flash-exp", 
+                       help="Gemini model name (default: gemini-2.0-flash-exp). Use --list-models to see available models.")
+    parser.add_argument("--list-models", action="store_true", help="List available models and exit")
     parser.add_argument("--output-dir", type=str, default="output", help="Output directory for images and results")
     parser.add_argument("--no-save", action="store_true", help="Don't save captured images")
     parser.add_argument("--gpio", action="store_true", help="Enable GPIO hardware outputs (LED, buzzer)")
@@ -306,6 +507,20 @@ def main():
     args = parser.parse_args()
     
     try:
+        # If --list-models is specified, list available models and exit
+        if args.list_models:
+            print("Fetching available models...")
+            # Create a minimal detector just to access the API
+            detector = TrashDetector(api_key=args.api_key, model_name="gemini-1.5-flash")
+            models = detector._list_available_models()
+            if models:
+                print("\nAvailable models:")
+                for model in models:
+                    print(f"  - {model}")
+            else:
+                print("Could not retrieve model list. Check your API key.")
+            sys.exit(0)
+        
         # Initialize detector
         detector = TrashDetector(
             api_key=args.api_key, 

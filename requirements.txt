@@ -1,6 +1,9 @@
 opencv-python>=4.8.0
-google-generativeai>=0.3.0
+# Use new google-genai package (recommended)
+# If google-genai is not available, the code will fall back to google-generativeai
+google-genai>=0.2.0
 python-dotenv>=1.0.0
 numpy>=1.24.0
+Pillow>=10.0.0
 RPi.GPIO>=0.7.1; platform_machine == "armv7l" or platform_machine == "aarch64"
 
