@@ -401,12 +401,16 @@ Format your response as JSON with these fields."""
         Returns:
             dict: Detection results
         """
-        # Create output directory
+        # Create output directories
         Path(output_dir).mkdir(exist_ok=True)
+        captures_dir = os.path.join(output_dir, "captures")
+        Path(captures_dir).mkdir(exist_ok=True)
+        results_dir = os.path.join(output_dir, "results")
+        Path(results_dir).mkdir(exist_ok=True)
         
         # Capture image
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        image_path = os.path.join(output_dir, f"capture_{timestamp}.jpg") if save_image else None
+        image_path = os.path.join(captures_dir, f"capture_{timestamp}.jpg") if save_image else None
         
         print("Capturing image...")
         image = self.capture_image(image_path)
@@ -415,8 +419,8 @@ Format your response as JSON with these fields."""
         print("Analyzing image with Gemini...")
         results = self.detect_trash(image)
         
-        # Save results
-        results_path = os.path.join(output_dir, f"results_{timestamp}.json")
+        # Save results to results subdirectory
+        results_path = os.path.join(results_dir, f"results_{timestamp}.json")
         with open(results_path, 'w') as f:
             json.dump(results, f, indent=2)
         
@@ -473,6 +477,121 @@ Format your response as JSON with these fields."""
             # Or just keep LED off
             print("🟢 No trash detected - hardware outputs off")
     
+    def run_interactive_mode(self, output_dir="output", save_image=True):
+        """
+        Run interactive mode - show camera feed and capture on 'C' keypress
+        
+        Args:
+            output_dir: Directory to save images and results
+            save_image: Whether to save captured images
+            
+        Controls:
+            'C' or 'c': Capture and analyze current frame
+            'Q' or 'q' or ESC: Quit
+        """
+        if not self.camera:
+            raise RuntimeError("Camera not initialized. Call initialize_camera() first.")
+        
+        print("\n" + "="*60)
+        print("INTERACTIVE MODE")
+        print("="*60)
+        print("Press 'C' to capture and analyze")
+        print("Press 'Q' or ESC to quit")
+        print("="*60 + "\n")
+        
+        # Create output directories
+        Path(output_dir).mkdir(exist_ok=True)
+        captures_dir = os.path.join(output_dir, "captures")
+        Path(captures_dir).mkdir(exist_ok=True)
+        results_dir = os.path.join(output_dir, "results")
+        Path(results_dir).mkdir(exist_ok=True)
+        
+        frame_count = 0
+        
+        try:
+            while True:
+                # Read frame from camera
+                ret, frame = self.camera.read()
+                if not ret:
+                    print("Failed to read from camera")
+                    break
+                
+                # Display the frame
+                display_frame = frame.copy()
+                cv2.putText(display_frame, "Press 'C' to capture, 'Q' to quit", 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(display_frame, f"Frame: {frame_count}", 
+                           (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                
+                cv2.imshow("Trash Detector - Interactive Mode", display_frame)
+                
+                # Wait for keypress (1ms delay to allow window to update)
+                key = cv2.waitKey(1) & 0xFF
+                
+                # Check for quit
+                if key == ord('q') or key == ord('Q') or key == 27:  # Q or ESC
+                    print("\nQuitting interactive mode...")
+                    break
+                
+                # Check for capture
+                if key == ord('c') or key == ord('C'):
+                    print("\n" + "-"*60)
+                    print("CAPTURING AND ANALYZING...")
+                    print("-"*60)
+                    
+                    # Capture current frame
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    image_path = os.path.join(captures_dir, f"capture_{timestamp}.jpg") if save_image else None
+                    
+                    if save_image:
+                        cv2.imwrite(image_path, frame)
+                        print(f"Image saved to: {image_path}")
+                    
+                    # Analyze the frame
+                    print("Analyzing image with Gemini...")
+                    results = self.detect_trash(frame)
+                    
+                    # Save results to results subdirectory
+                    results_path = os.path.join(results_dir, f"results_{timestamp}.json")
+                    with open(results_path, 'w') as f:
+                        json.dump(results, f, indent=2)
+                    
+                    # Display results
+                    print(f"\n{'='*60}")
+                    print("DETECTION RESULTS")
+                    print(f"{'='*60}")
+                    print(f"Timestamp: {results.get('timestamp', 'N/A')}")
+                    print(f"Trash Detected: {'YES' if results.get('detected') else 'NO'}")
+                    if results.get('trash_type'):
+                        print(f"Trash Type: {results.get('trash_type')}")
+                    if results.get('confidence'):
+                        print(f"Confidence: {results.get('confidence')}")
+                    if results.get('location'):
+                        print(f"Location: {results.get('location')}")
+                    if results.get('error'):
+                        print(f"Error: {results.get('error')}")
+                    print(f"\nFull response saved to: {results_path}")
+                    print(f"{'='*60}\n")
+                    
+                    # Trigger hardware outputs if enabled
+                    if self.gpio_enabled:
+                        self.trigger_hardware_output(results.get('detected', False))
+                    
+                    # Show result on frame briefly
+                    result_text = "TRASH DETECTED!" if results.get('detected') else "No trash"
+                    color = (0, 0, 255) if results.get('detected') else (0, 255, 0)
+                    cv2.putText(display_frame, result_text, (10, 90), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                    cv2.imshow("Trash Detector - Interactive Mode", display_frame)
+                    cv2.waitKey(2000)  # Show result for 2 seconds
+                
+                frame_count += 1
+                
+        except KeyboardInterrupt:
+            print("\nInterrupted by user")
+        finally:
+            cv2.destroyAllWindows()
+    
     def cleanup(self):
         """Release camera and GPIO resources"""
         if self.camera:
@@ -503,6 +622,8 @@ def main():
     parser.add_argument("--gpio", action="store_true", help="Enable GPIO hardware outputs (LED, buzzer)")
     parser.add_argument("--led-pin", type=int, default=18, help="GPIO pin for LED (BCM numbering, default: 18)")
     parser.add_argument("--buzzer-pin", type=int, default=None, help="GPIO pin for buzzer (optional)")
+    parser.add_argument("--interactive", "-i", action="store_true", 
+                       help="Interactive mode: show camera feed, press 'C' to capture, 'Q' to quit")
     
     args = parser.parse_args()
     
@@ -534,17 +655,26 @@ def main():
         print("Initializing camera...")
         detector.initialize_camera(camera_index=args.camera)
         
-        # Run detection
-        results = detector.run_detection(
-            save_image=not args.no_save,
-            output_dir=args.output_dir
-        )
-        
-        # Cleanup
-        detector.cleanup()
-        
-        # Exit with appropriate code
-        sys.exit(0 if not results.get('detected') else 1)
+        # Run in interactive mode or single capture mode
+        if args.interactive:
+            detector.run_interactive_mode(
+                output_dir=args.output_dir,
+                save_image=not args.no_save
+            )
+            detector.cleanup()
+            sys.exit(0)
+        else:
+            # Single capture mode
+            results = detector.run_detection(
+                save_image=not args.no_save,
+                output_dir=args.output_dir
+            )
+            
+            # Cleanup
+            detector.cleanup()
+            
+            # Exit with appropriate code
+            sys.exit(0 if not results.get('detected') else 1)
         
     except KeyboardInterrupt:
         print("\nInterrupted by user")

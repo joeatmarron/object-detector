@@ -14,8 +14,13 @@ build/
 dist/
 *.egg-info/
 
-# Output files
-output/
+# Output files - ignore contents but keep folder structure
+output/captures/*
+!output/captures/.gitkeep
+output/results/*
+!output/results/.gitkeep
+
+# Legacy patterns (for backwards compatibility)
 *.jpg
 *.png
 *.json

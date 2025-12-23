@@ -87,10 +87,11 @@ python3 trash_detector.py --help
 Available options:
 - `--api-key`: Override API key from environment variable
 - `--camera`: Camera index (default: 0, use 1, 2, etc. for USB cameras)
-- `--model`: Gemini model name (default: gemini-1.5-flash)
+- `--model`: Gemini model name (default: gemini-2.0-flash-exp)
 - `--list-models`: List available models and exit
 - `--output-dir`: Output directory (default: output)
 - `--no-save`: Don't save captured images
+- `--interactive` or `-i`: Interactive mode - show camera feed, press 'C' to capture
 - `--gpio`: Enable GPIO hardware outputs (LED, buzzer)
 - `--led-pin`: GPIO pin for LED (default: 18)
 - `--buzzer-pin`: GPIO pin for buzzer (optional)
@@ -131,6 +132,19 @@ python3 trash_detector.py --gpio
 python3 trash_detector.py --gpio --led-pin 18 --buzzer-pin 23
 ```
 
+**Interactive mode (press 'C' to capture):**
+```bash
+python3 trash_detector.py --interactive
+# or
+python3 trash_detector.py -i
+```
+
+In interactive mode:
+- Live camera feed is displayed
+- Press **'C'** to capture and analyze the current frame
+- Press **'Q'** or **ESC** to quit
+- Results are displayed in the terminal and saved to files
+
 See [HARDWARE_SETUP.md](HARDWARE_SETUP.md) for detailed wiring instructions.
 
 ## Raspberry Pi Setup
@@ -167,10 +181,19 @@ python3 trash_detector.py --camera 0  # Try 0, 1, 2, etc.
 
 ## Output
 
-The detector creates two files for each detection:
+The detector organizes output files in the following structure:
 
-1. **Image file**: `output/capture_YYYYMMDD_HHMMSS.jpg` - The captured image
-2. **Results file**: `output/results_YYYYMMDD_HHMMSS.json` - Detection results in JSON format
+```
+output/
+├── captures/
+│   └── capture_YYYYMMDD_HHMMSS.jpg  # Captured images
+└── results/
+    └── results_YYYYMMDD_HHMMSS.json  # Detection results in JSON format
+```
+
+For each detection:
+1. **Image file**: `output/captures/capture_YYYYMMDD_HHMMSS.jpg` - The captured image
+2. **Results file**: `output/results/results_YYYYMMDD_HHMMSS.json` - Detection results in JSON format
 
 Example JSON output:
 ```json
