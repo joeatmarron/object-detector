@@ -416,28 +416,6 @@ Output: Respond ONLY as JSON with the above fields. Always include the category 
                 parsed = json.loads(text)
                 result.update(parsed)
                 
-                # Normalize category field (handle different possible keys)
-                if "category" in parsed:
-                    result["category"] = parsed["category"]
-                elif "trash_category" in parsed:
-                    result["category"] = parsed["trash_category"]
-                elif "waste_category" in parsed:
-                    result["category"] = parsed["waste_category"]
-                
-                # Ensure category is one of the valid values
-                if result.get("category"):
-                    category = str(result["category"]).strip()
-                    # Normalize to title case
-                    if category.lower() in ["organic", "organics"]:
-                        result["category"] = "Organic"
-                    elif category.lower() in ["recyclables", "recyclable", "recycling"]:
-                        result["category"] = "Recyclables"
-                    elif category.lower() in ["landfill", "garbage", "general waste", "non-recyclable"]:
-                        result["category"] = "Landfill"
-                    else:
-                        # Keep original if it's already in correct format
-                        result["category"] = category
-                
                 # Check for trash detection in multiple possible formats
                 detected = False
                 # Try different possible keys from the API response (in order of likelihood)
@@ -449,7 +427,7 @@ Output: Respond ONLY as JSON with the above fields. Always include the category 
                     detected = value.startswith("yes") or value == "true" or value == "1"
                 elif "detected" in parsed:
                     value = str(parsed["detected"]).lower().strip()
-                    detected = value in ["true", "yes", "1"] or value == "true"
+                    detected = value in ["true", "yes", "1"]
                 elif isinstance(parsed.get("detected"), bool):
                     detected = parsed["detected"]
                 
