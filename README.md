@@ -64,9 +64,10 @@ Add your Gemini API key:
 GEMINI_API_KEY=your_actual_api_key_here
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+ELEVENLABS_MODEL=eleven_v3
 ```
 
-**Note:** The `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` are optional and only needed if you want to enable text-to-speech functionality.
+**Note:** The `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and `ELEVENLABS_MODEL` are optional and only needed if you want to enable text-to-speech functionality. The model defaults to `eleven_v3` which supports voice annotations like `[whispers]`, `[giggles]`, `[excitedly]`, etc.
 
 ## Usage
 

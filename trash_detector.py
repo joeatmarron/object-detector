@@ -9,6 +9,7 @@ import sys
 import cv2
 import base64
 import json
+import random
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -56,8 +57,26 @@ CATEGORY_EMOJI = {
     'Landfill': '🗑️'
 }
 
+# Eleven Labs Voice IDs - Spanish-friendly voices for variety
+# These voices work well with Spanish and support voice annotations
+ELEVENLABS_VOICES = [
+    "4enMglmEIYpK0bGn0QuZ",  # Rachel - English, works well with Spanish
+    "g10k86KeEUyBqW9lcKYg",  # Adam - English
+    "br0MPoLVxuslVxf61qHn",  # Bella - English
+    "eRS3faIyd3KSRjzmhPxE",  # Antoni - English
+    "iwNksRcTU0mglXb8PAk5",  # Elli - English
+    "KuCuu213C5LmCbAvbEb8",  # Josh - English
+    "wurf8bw1jlmweEM8XA4L",  # Arnold - English
+    "tomkxGQGz4b1kE0EM722",  # Adam - English
+    "Wl3O9lmFSMgGFTTwuS6f",  # Dorothy - English
+    "lRf3yb6jZby4fn3q3Q7M",  # Charlotte - English
+    "Ea3eYxXujQVVwq2KhqGC",  # Charlotte - English
+    "eRALiEwGnmo3g1ze76Y2",  # Charlotte - English
+    # Add more voices as needed - check Eleven Labs voice library for Spanish-specific voices
+]
+
 class TrashDetector:
-    def __init__(self, api_key=None, model_name="gemini-2.0-flash-exp", enable_gpio=False, led_pin=18, buzzer_pin=None, enable_tts=False, elevenlabs_api_key=None, elevenlabs_voice_id=None):
+    def __init__(self, api_key=None, model_name="gemini-2.0-flash-exp", enable_gpio=False, led_pin=18, buzzer_pin=None, enable_tts=False, elevenlabs_api_key=None, elevenlabs_voice_id=None, elevenlabs_model=None):
         """
         Initialize the Trash Detector
         
@@ -71,6 +90,7 @@ class TrashDetector:
             enable_tts: Enable text-to-speech using Eleven Labs API
             elevenlabs_api_key: Eleven Labs API key (or set ELEVENLABS_API_KEY env var)
             elevenlabs_voice_id: Eleven Labs voice ID (default: "21m00Tcm4TlvDq8ikWAM" - Rachel)
+            elevenlabs_model: Eleven Labs model ID (default: "eleven_multilingual_v2", or "eleven_v3" for alpha)
         """
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
@@ -111,14 +131,36 @@ class TrashDetector:
         # Text-to-speech setup
         self.tts_enabled = enable_tts and TTS_AVAILABLE
         self.elevenlabs_api_key = elevenlabs_api_key or os.getenv("ELEVENLABS_API_KEY")
-        self.elevenlabs_voice_id = elevenlabs_voice_id or os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+        
+        # Voice selection: use provided voice ID, or rotating selection from available voices
+        if elevenlabs_voice_id:
+            self.elevenlabs_voice_id = elevenlabs_voice_id
+            self.use_random_voice = False
+            self.last_voice_id = None  # Not needed when using fixed voice
+        else:
+            env_voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+            if env_voice_id:
+                self.elevenlabs_voice_id = env_voice_id
+                self.use_random_voice = False
+                self.last_voice_id = None  # Not needed when using fixed voice
+            else:
+                # Use rotating voice selection from the voices array (always different)
+                self.use_random_voice = True
+                self.elevenlabs_voice_id = None  # Will be selected with rotation each time
+                self.last_voice_id = None  # Track last used voice to ensure rotation
+        
+        # Default to v3 model for better annotation support (supports [whispers], [giggles], etc.)
+        self.elevenlabs_model = elevenlabs_model or os.getenv("ELEVENLABS_MODEL", "eleven_v3")
         
         if self.tts_enabled:
             if not self.elevenlabs_api_key:
                 print("Warning: TTS enabled but ELEVENLABS_API_KEY not found. TTS disabled.")
                 self.tts_enabled = False
             else:
-                print(f"Text-to-speech enabled with voice ID: {self.elevenlabs_voice_id}")
+                if self.use_random_voice:
+                    print(f"Text-to-speech enabled with rotating voice selection from {len(ELEVENLABS_VOICES)} voices (always different), model: {self.elevenlabs_model}")
+                else:
+                    print(f"Text-to-speech enabled with voice ID: {self.elevenlabs_voice_id}, model: {self.elevenlabs_model}")
         elif enable_tts and not TTS_AVAILABLE:
             print("Warning: TTS requested but dependencies not available. Install with: pip3 install requests")
     
@@ -767,7 +809,24 @@ class TrashDetector:
             return
         
         try:
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.elevenlabs_voice_id}"
+            # Select voice: use configured voice or rotating selection (always different)
+            if self.use_random_voice:
+                # Get available voices excluding the last one used
+                available_voices = [v for v in ELEVENLABS_VOICES if v != self.last_voice_id]
+                
+                # If all voices were used or only one voice available, use all voices
+                if not available_voices:
+                    available_voices = ELEVENLABS_VOICES
+                
+                # Select a different voice from available ones
+                voice_id = random.choice(available_voices)
+                self.last_voice_id = voice_id  # Remember this voice for next time
+                # Optional: uncomment to see which voice was selected
+                # print(f"Using rotating voice: {voice_id}")
+            else:
+                voice_id = self.elevenlabs_voice_id
+            
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
             
             headers = {
                 "Accept": "audio/mpeg",
@@ -777,10 +836,12 @@ class TrashDetector:
             
             data = {
                 "text": text,
-                "model_id": "eleven_multilingual_v2",  # Supports Spanish
+                "model_id": self.elevenlabs_model,  # Use configured model (supports annotations like [whispers], [giggles], etc.)
                 "voice_settings": {
                     "stability": 0.5,
-                    "similarity_boost": 0.5
+                    "similarity_boost": 0.5,
+                    "style": 0.0,
+                    "use_speaker_boost": True
                 }
             }
             
@@ -856,6 +917,7 @@ def main():
     parser.add_argument("--tts", action="store_true", help="Enable text-to-speech using Eleven Labs API")
     parser.add_argument("--elevenlabs-api-key", type=str, help="Eleven Labs API key (or set ELEVENLABS_API_KEY env var)")
     parser.add_argument("--elevenlabs-voice-id", type=str, help="Eleven Labs voice ID (default: Rachel)")
+    parser.add_argument("--elevenlabs-model", type=str, help="Eleven Labs model ID (default: eleven_multilingual_v2, or use eleven_v3 for alpha)")
     parser.add_argument("--interactive", "-i", action="store_true", 
                        help="Interactive mode: show camera feed, press 'C' to capture, 'Q' to quit")
     
@@ -885,7 +947,8 @@ def main():
             buzzer_pin=args.buzzer_pin,
             enable_tts=args.tts,
             elevenlabs_api_key=args.elevenlabs_api_key,
-            elevenlabs_voice_id=args.elevenlabs_voice_id
+            elevenlabs_voice_id=args.elevenlabs_voice_id,
+            elevenlabs_model=args.elevenlabs_model
         )
         
         # Initialize camera
