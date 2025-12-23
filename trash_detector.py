@@ -155,16 +155,30 @@ class TrashDetector:
             dict: Detection results with confidence and details
         """
         if prompt is None:
-            prompt = """Analyze this image and determine if there is trash or litter visible.
-            
-Please provide:
-1. Is trash/litter detected? (Yes/No)
-2. What type of trash is visible? (e.g., plastic bottle, wrapper, can, etc.)
-3. Confidence level (High/Medium/Low)
-4. Location description (e.g., center, left side, ground, etc.)
-5. Any recommendations for cleanup?
+            prompt = """You are an image analysis system for trash/litter detection.
 
-Format your response as JSON with these fields."""
+Task: Determine whether any trash/litter is visible anywhere in the image (including items being held, hanging, on furniture, or on the ground).
+
+Important: Trash/litter includes organic/biodegradable waste such as:
+	•	fruit peels (orange/banana), cores, shells, leftover food scraps
+	•	napkins/tissues/paper scraps
+	•	plant trimmings that appear discarded (not living plants)
+
+Also include common non-organic trash such as:
+	•	plastic bottles/bags, wrappers, cans, cups, cigarettes/vapes, etc.
+
+Decision rules:
+	•	Count an item as trash if it appears discarded or waste-like, even if it’s in someone’s hand.
+	•	Do not flag normal household items or living plants as trash.
+	•	If it could be “food being eaten” vs “waste/litter,” use visual cues (e.g., peeled rind dangling/separated usually indicates waste).
+	•	Provide a confidence level (High/Medium/Low).
+
+Output: Respond only as JSON with these fields:
+	1.	trash_detected (Yes/No)
+	2.	trash_type (array of strings; be specific)
+	3.	confidence (High/Medium/Low)
+	4.	location_description
+	5.	recommendations (array of strings)"""
         
         # Convert image to format compatible with Gemini API
         # Try PIL Image first (preferred)
@@ -375,11 +389,50 @@ Format your response as JSON with these fields."""
                 
                 parsed = json.loads(text)
                 result.update(parsed)
-                result["detected"] = parsed.get("Is trash/litter detected?", "").lower().startswith("yes")
+                
+                # Check for trash detection in multiple possible formats
+                detected = False
+                # Try different possible keys from the API response (in order of likelihood)
+                if "trash_detected" in parsed:
+                    value = str(parsed["trash_detected"]).lower().strip()
+                    detected = value.startswith("yes") or value == "true" or value == "1"
+                elif "Is trash/litter detected?" in parsed:
+                    value = str(parsed["Is trash/litter detected?"]).lower().strip()
+                    detected = value.startswith("yes") or value == "true" or value == "1"
+                elif "detected" in parsed:
+                    value = str(parsed["detected"]).lower().strip()
+                    detected = value in ["true", "yes", "1"] or value == "true"
+                elif isinstance(parsed.get("detected"), bool):
+                    detected = parsed["detected"]
+                
+                # If still not detected, check if trash_type exists (indicates trash was found)
+                if not detected and parsed.get("trash_type"):
+                    # If trash_type has content, trash was detected
+                    trash_type = parsed.get("trash_type")
+                    if isinstance(trash_type, list) and len(trash_type) > 0:
+                        detected = True
+                    elif isinstance(trash_type, str) and trash_type.strip():
+                        detected = True
+                
+                result["detected"] = detected
+                    
             except (json.JSONDecodeError, KeyError):
                 # If JSON parsing fails, extract info from text
                 text_lower = response_text.lower()
-                result["detected"] = "yes" in text_lower or "trash" in text_lower or "litter" in text_lower
+                # Look for positive indicators
+                has_yes = "yes" in text_lower
+                has_trash = "trash" in text_lower or "litter" in text_lower
+                has_no = "no" in text_lower and ("trash" not in text_lower and "litter" not in text_lower)
+                
+                # If we see "yes" with trash/litter, it's detected
+                # If we see "no trash" or "no litter", it's not detected
+                if has_yes and has_trash:
+                    result["detected"] = True
+                elif has_no:
+                    result["detected"] = False
+                else:
+                    # Default: if trash/litter mentioned, assume detected
+                    result["detected"] = has_trash
             
             return result
             
