@@ -168,10 +168,24 @@ Also include common non-organic trash such as:
 	•	plastic bottles/bags, wrappers, cans, cups, cigarettes/vapes, etc.
 
 Decision rules:
-	•	Count an item as trash if it appears discarded or waste-like, even if it’s in someone’s hand.
+	•	Count an item as trash if it appears discarded or waste-like, even if it's in someone's hand.
 	•	Do not flag normal household items or living plants as trash.
-	•	If it could be “food being eaten” vs “waste/litter,” use visual cues (e.g., peeled rind dangling/separated usually indicates waste).
+	•	If it could be "food being eaten" vs "waste/litter," use visual cues (e.g., peeled rind dangling/separated usually indicates waste).
 	•	Provide a confidence level (High/Medium/Low).
+
+Category Classification:
+Classify the detected trash into one of these three categories:
+- "Organic": Food waste, fruit peels, vegetable scraps, compostable materials, organic matter
+- "Recyclables": Plastic bottles, cans, paper, cardboard, glass, recyclable materials
+- "Landfill": Non-recyclable items, mixed materials, items that must go to landfill, general waste
+
+Format your response as JSON with these fields:
+- trash_detected: "Yes" or "No"
+- trash_type: array of trash items found (e.g., ["Orange peel", "Plastic bottle"])
+- category: "Organic", "Recyclables", or "Landfill" (only if trash_detected is "Yes")
+- confidence: "High", "Medium", or "Low"
+- location_description: description of where the trash is located
+- recommendations: array of cleanup recommendations
 
 Output: Respond only as JSON with these fields:
 	1.	trash_detected (Yes/No)
@@ -373,6 +387,7 @@ Output: Respond only as JSON with these fields:
                 "raw_response": response_text,
                 "detected": False,
                 "trash_type": None,
+                "category": None,
                 "confidence": None,
                 "location": None,
                 "recommendations": None
@@ -389,6 +404,28 @@ Output: Respond only as JSON with these fields:
                 
                 parsed = json.loads(text)
                 result.update(parsed)
+                
+                # Normalize category field (handle different possible keys)
+                if "category" in parsed:
+                    result["category"] = parsed["category"]
+                elif "trash_category" in parsed:
+                    result["category"] = parsed["trash_category"]
+                elif "waste_category" in parsed:
+                    result["category"] = parsed["waste_category"]
+                
+                # Ensure category is one of the valid values
+                if result.get("category"):
+                    category = str(result["category"]).strip()
+                    # Normalize to title case
+                    if category.lower() in ["organic", "organics"]:
+                        result["category"] = "Organic"
+                    elif category.lower() in ["recyclables", "recyclable", "recycling"]:
+                        result["category"] = "Recyclables"
+                    elif category.lower() in ["landfill", "garbage", "general waste", "non-recyclable"]:
+                        result["category"] = "Landfill"
+                    else:
+                        # Keep original if it's already in correct format
+                        result["category"] = category
                 
                 # Check for trash detection in multiple possible formats
                 detected = False
@@ -483,11 +520,26 @@ Output: Respond only as JSON with these fields:
         print(f"Timestamp: {results.get('timestamp', 'N/A')}")
         print(f"Trash Detected: {'YES' if results.get('detected') else 'NO'}")
         if results.get('trash_type'):
-            print(f"Trash Type: {results.get('trash_type')}")
+            trash_type = results.get('trash_type')
+            if isinstance(trash_type, list):
+                print(f"Trash Type: {', '.join(trash_type)}")
+            else:
+                print(f"Trash Type: {trash_type}")
+        if results.get('category'):
+            category = results.get('category')
+            # Add emoji for visual clarity
+            category_emoji = {
+                'Organic': '🍃',
+                'Recyclables': '♻️',
+                'Landfill': '🗑️'
+            }
+            emoji = category_emoji.get(category, '📦')
+            print(f"Category: {emoji} {category}")
         if results.get('confidence'):
             print(f"Confidence: {results.get('confidence')}")
-        if results.get('location'):
-            print(f"Location: {results.get('location')}")
+        if results.get('location') or results.get('location_description'):
+            location = results.get('location') or results.get('location_description')
+            print(f"Location: {location}")
         print(f"\nFull response saved to: {results_path}")
         print(f"{'='*50}\n")
         
@@ -616,11 +668,26 @@ Output: Respond only as JSON with these fields:
                     print(f"Timestamp: {results.get('timestamp', 'N/A')}")
                     print(f"Trash Detected: {'YES' if results.get('detected') else 'NO'}")
                     if results.get('trash_type'):
-                        print(f"Trash Type: {results.get('trash_type')}")
+                        trash_type = results.get('trash_type')
+                        if isinstance(trash_type, list):
+                            print(f"Trash Type: {', '.join(trash_type)}")
+                        else:
+                            print(f"Trash Type: {trash_type}")
+                    if results.get('category'):
+                        category = results.get('category')
+                        # Add emoji for visual clarity
+                        category_emoji = {
+                            'Organic': '🍃',
+                            'Recyclables': '♻️',
+                            'Landfill': '🗑️'
+                        }
+                        emoji = category_emoji.get(category, '📦')
+                        print(f"Category: {emoji} {category}")
                     if results.get('confidence'):
                         print(f"Confidence: {results.get('confidence')}")
-                    if results.get('location'):
-                        print(f"Location: {results.get('location')}")
+                    if results.get('location') or results.get('location_description'):
+                        location = results.get('location') or results.get('location_description')
+                        print(f"Location: {location}")
                     if results.get('error'):
                         print(f"Error: {results.get('error')}")
                     print(f"\nFull response saved to: {results_path}")
