@@ -315,6 +315,85 @@ class TrashDetector:
         
         return lines
     
+    def _draw_utf8_text(self, img, text, position, font_scale, color, thickness, outline_color=(0, 0, 0), outline_thickness=2):
+        """
+        Draw UTF-8 text on OpenCV image using PIL for proper character encoding
+        
+        Args:
+            img: OpenCV image (numpy array)
+            text: Text to draw (can contain UTF-8 characters like á, é, í, ó, ú, ñ)
+            position: (x, y) tuple for text position
+            font_scale: Font size scale
+            color: Text color (BGR tuple)
+            thickness: Text thickness
+            outline_color: Outline color (BGR tuple, default black)
+            outline_thickness: Outline thickness
+            
+        Returns:
+            Modified image
+        """
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            import numpy as np
+            
+            # Convert OpenCV image to PIL Image
+            img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            draw = ImageDraw.Draw(img_pil)
+            
+            # Try to load a font that supports UTF-8
+            try:
+                # Try common system fonts that support UTF-8
+                font_paths = [
+                    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+                    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+                    '/System/Library/Fonts/Helvetica.ttc',
+                    '/Windows/Fonts/arial.ttf',
+                ]
+                font = None
+                for font_path in font_paths:
+                    if os.path.exists(font_path):
+                        # Calculate font size based on scale (approximate)
+                        font_size = int(font_scale * 30)  # Adjust multiplier as needed
+                        font = ImageFont.truetype(font_path, font_size)
+                        break
+                
+                if font is None:
+                    # Fallback to default font
+                    font = ImageFont.load_default()
+            except:
+                font = ImageFont.load_default()
+            
+            x, y = position
+            
+            # Draw outline first (draw multiple times for thicker outline)
+            if outline_thickness > 0:
+                for dx in range(-outline_thickness, outline_thickness + 1):
+                    for dy in range(-outline_thickness, outline_thickness + 1):
+                        if dx != 0 or dy != 0:
+                            # Convert BGR to RGB for PIL
+                            outline_rgb = (outline_color[2], outline_color[1], outline_color[0])
+                            draw.text((x + dx, y + dy), text, font=font, fill=outline_rgb)
+            
+            # Draw main text (convert BGR to RGB for PIL)
+            color_rgb = (color[2], color[1], color[0])
+            draw.text((x, y), text, font=font, fill=color_rgb)
+            
+            # Convert back to OpenCV format
+            img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+            return img
+            
+        except ImportError:
+            # Fallback to OpenCV putText if PIL not available (will show ? for special chars)
+            cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX, font_scale, outline_color, thickness + outline_thickness)
+            cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
+            return img
+        except Exception as e:
+            # Fallback to OpenCV putText on any error
+            print(f"Warning: Could not render UTF-8 text with PIL: {e}")
+            cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX, font_scale, outline_color, thickness + outline_thickness)
+            cv2.putText(img, text, position, cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
+            return img
+    
     def initialize_camera(self, camera_index=0):
         """
         Initialize the camera
@@ -722,7 +801,7 @@ class TrashDetector:
         results_overlay = {
             'active': False,
             'start_time': None,
-            'duration': 10.0,  # Show results for 10 seconds (longer for accessibility)
+            'duration': 20.0,  # Show results for 20 seconds (longer for accessibility)
             'data': None  # Will store results dict
         }
         
@@ -798,13 +877,12 @@ class TrashDetector:
                                 x_pos = (width - text_width) // 2
                                 y_pos = (height + text_height) // 2  # Center vertically
                                 
-                                # Draw text with outline for better visibility
-                                # Draw black outline first
-                                cv2.putText(display_frame, category_text, (x_pos, y_pos), 
-                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness + 2)
-                                # Draw colored text on top
-                                cv2.putText(display_frame, category_text, (x_pos, y_pos), 
-                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, category_color, thickness)
+                                # Draw text with outline for better visibility (using UTF-8 compatible method)
+                                display_frame = self._draw_utf8_text(
+                                    display_frame, category_text, (x_pos, y_pos), 
+                                    font_scale, category_color, thickness,
+                                    outline_color=(0, 0, 0), outline_thickness=2
+                                )
                             
                             # Add what_to_do_display if available (centered, smaller text below category)
                             # Use what_to_do_display (without annotations) for display, fallback to what_to_do
@@ -831,12 +909,12 @@ class TrashDetector:
                                     line_x = (width - line_width) // 2  # Center each line
                                     line_y = start_y + (i * line_height)
                                     
-                                    # Draw black outline first for visibility
-                                    cv2.putText(display_frame, line, (line_x, line_y), 
-                                               cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, (0, 0, 0), thickness_instruction + 2)
-                                    # Draw white text on top
-                                    cv2.putText(display_frame, line, (line_x, line_y), 
-                                               cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, (255, 255, 255), thickness_instruction)
+                                    # Draw text with UTF-8 support
+                                    display_frame = self._draw_utf8_text(
+                                        display_frame, line, (line_x, line_y),
+                                        font_scale_instruction, (255, 255, 255), thickness_instruction,
+                                        outline_color=(0, 0, 0), outline_thickness=2
+                                    )
                         else:
                             result_text = "NO TRASH DETECTED"
                             color = (0, 255, 0)  # Green
@@ -850,11 +928,12 @@ class TrashDetector:
                             x_pos = (width - text_width) // 2
                             y_pos = (height + text_height) // 2
                             
-                            # Draw with outline
-                            cv2.putText(display_frame, result_text, (x_pos, y_pos), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness + 2)
-                            cv2.putText(display_frame, result_text, (x_pos, y_pos), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
+                            # Draw with UTF-8 support
+                            display_frame = self._draw_utf8_text(
+                                display_frame, result_text, (x_pos, y_pos),
+                                font_scale, color, thickness,
+                                outline_color=(0, 0, 0), outline_thickness=2
+                            )
                             
                             # Show what_to_do_display even when no trash is detected
                             # Use what_to_do_display (without annotations) for display, fallback to what_to_do
@@ -874,11 +953,12 @@ class TrashDetector:
                                     line_x = (width - line_width) // 2
                                     line_y = start_y + (i * line_height)
                                     
-                                    # Draw with outline
-                                    cv2.putText(display_frame, line, (line_x, line_y), 
-                                               cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, (0, 0, 0), thickness_instruction + 2)
-                                    cv2.putText(display_frame, line, (line_x, line_y), 
-                                               cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, (255, 255, 255), thickness_instruction)
+                                    # Draw text with UTF-8 support
+                                    display_frame = self._draw_utf8_text(
+                                        display_frame, line, (line_x, line_y),
+                                        font_scale_instruction, (255, 255, 255), thickness_instruction,
+                                        outline_color=(0, 0, 0), outline_thickness=2
+                                    )
                     else:
                         # Results overlay period ended
                         results_overlay['active'] = False
@@ -951,7 +1031,7 @@ class TrashDetector:
                         # Start non-blocking flash
                         flash_state['active'] = True
                         flash_state['start_time'] = datetime.now().timestamp()
-                        flash_state['duration'] = 8.0  # 8 seconds for accessibility (longer so people can read)
+                        flash_state['duration'] = 15.0  # 15 seconds for accessibility (longer so people can read)
                         flash_state['color'] = flash_color
                         flash_state['type'] = 'category'
                     
