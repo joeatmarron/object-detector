@@ -173,22 +173,33 @@ Decision rules:
 	•	If it could be "food being eaten" vs "waste/litter," use visual cues (e.g., peeled rind dangling/separated usually indicates waste).
 	•	Provide a confidence level (High/Medium/Low).
 
-Category Classification:
-Classify the detected trash into one of these three categories:
+Category Classification (REQUIRED when trash is detected):
+You MUST always classify detected trash into one of these three categories:
 - "Organic": Food waste, fruit peels, vegetable scraps, compostable materials, organic matter
 - "Recyclables": Plastic bottles, cans, paper, cardboard, glass, recyclable materials
 - "Landfill": Non-recyclable items, mixed materials, items that must go to landfill, general waste
 
+IMPORTANT: If trash_detected is "Yes", you MUST include a category field. The category is required and cannot be null or missing.
+
 Format your response as JSON with these fields:
 - trash_detected: "Yes" or "No"
 - trash_type: array of trash items found (e.g., ["Orange peel", "Plastic bottle"])
-- category: "Organic", "Recyclables", or "Landfill" (only if trash_detected is "Yes")
+- category: "Organic", "Recyclables", or "Landfill" (REQUIRED if trash_detected is "Yes", can be null if "No")
 - confidence: "High", "Medium", or "Low"
 - location_description: description of where the trash is located
 - recommendations: array of cleanup recommendations
 
-Output: Respond only as JSON with these fields:
-	1.	trash_detected (Yes/No)
+Example response when trash is detected:
+{
+  "trash_detected": "Yes",
+  "trash_type": ["Orange peel"],
+  "category": "Organic",
+  "confidence": "High",
+  "location_description": "In person's hand",
+  "recommendations": ["Dispose in compost bin"]
+}
+
+Output: Respond ONLY as JSON with the above fields. Always include the category field when trash_detected is "Yes".
 	2.	trash_type (array of strings; be specific)
 	3.	confidence (High/Medium/Low)
 	4.	location_description
@@ -698,10 +709,33 @@ Output: Respond only as JSON with these fields:
                         self.trigger_hardware_output(results.get('detected', False))
                     
                     # Show result on frame briefly
-                    result_text = "TRASH DETECTED!" if results.get('detected') else "No trash"
-                    color = (0, 0, 255) if results.get('detected') else (0, 255, 0)
-                    cv2.putText(display_frame, result_text, (10, 90), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                    if results.get('detected'):
+                        result_text = "TRASH DETECTED!"
+                        color = (0, 0, 255)  # Red
+                        y_pos = 90
+                        cv2.putText(display_frame, result_text, (10, y_pos), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                        
+                        # Add category if available
+                        if results.get('category'):
+                            category = results.get('category')
+                            category_text = f"Category: {category}"
+                            # Use different colors for different categories
+                            category_colors = {
+                                'Organic': (0, 255, 0),      # Green
+                                'Recyclables': (255, 165, 0), # Orange
+                                'Landfill': (0, 165, 255)     # Blue
+                            }
+                            category_color = category_colors.get(category, (255, 255, 255))
+                            y_pos += 40
+                            cv2.putText(display_frame, category_text, (10, y_pos), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, category_color, 2)
+                    else:
+                        result_text = "No trash"
+                        color = (0, 255, 0)  # Green
+                        cv2.putText(display_frame, result_text, (10, 90), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                    
                     cv2.imshow("Trash Detector - Interactive Mode", display_frame)
                     cv2.waitKey(2000)  # Show result for 2 seconds
                 
