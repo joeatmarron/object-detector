@@ -1031,7 +1031,7 @@ class TrashDetector:
                         # Start non-blocking flash
                         flash_state['active'] = True
                         flash_state['start_time'] = datetime.now().timestamp()
-                        flash_state['duration'] = 15.0  # 15 seconds for accessibility (longer so people can read)
+                        flash_state['duration'] = 20.0  # Match results overlay duration (20 seconds) so color stays while text is visible
                         flash_state['color'] = flash_color
                         flash_state['type'] = 'category'
                     
