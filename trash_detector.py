@@ -190,6 +190,29 @@ class TrashDetector:
         print(f"\nFull response saved to: {results_path}")
         print(f"{'='*width}\n")
         
+    def _wrap_text(self, text, max_width=60):
+        """Wrap text to fit within max_width characters per line"""
+        words = text.split()
+        lines = []
+        current_line = []
+        current_length = 0
+        
+        for word in words:
+            word_length = len(word)
+            # If adding this word would exceed max_width, start a new line
+            if current_length + word_length + len(current_line) > max_width and current_line:
+                lines.append(' '.join(current_line))
+                current_line = [word]
+                current_length = word_length
+            else:
+                current_line.append(word)
+                current_length += word_length
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        return lines
+    
     def initialize_camera(self, camera_index=0):
         """
         Initialize the camera
@@ -657,11 +680,33 @@ class TrashDetector:
                             y_pos += 40
                             cv2.putText(display_frame, category_text, (10, y_pos), 
                                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, category_color, 2)
+                        
+                        # Add what_to_do if available
+                        if results.get('what_to_do'):
+                            what_to_do = results.get('what_to_do')
+                            y_pos += 50
+                            # Wrap text to fit on screen (approximately 50 characters per line)
+                            wrapped_lines = self._wrap_text(what_to_do, max_width=50)
+                            for line in wrapped_lines:
+                                cv2.putText(display_frame, line, (10, y_pos), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                                y_pos += 30
                     else:
                         result_text = "No trash"
                         color = (0, 255, 0)  # Green
-                        cv2.putText(display_frame, result_text, (10, 90), 
+                        y_pos = 90
+                        cv2.putText(display_frame, result_text, (10, y_pos), 
                                    cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                        
+                        # Show what_to_do even when no trash is detected
+                        if results.get('what_to_do'):
+                            what_to_do = results.get('what_to_do')
+                            y_pos += 50
+                            wrapped_lines = self._wrap_text(what_to_do, max_width=50)
+                            for line in wrapped_lines:
+                                cv2.putText(display_frame, line, (10, y_pos), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                                y_pos += 30
                     
                     cv2.imshow("Trash Detector - Interactive Mode", display_frame)
                     cv2.waitKey(2000)  # Show result for 2 seconds

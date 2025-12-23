@@ -11,36 +11,84 @@ Also include common non-organic trash such as:
 	•	plastic bottles/bags, wrappers, cans, cups, cigarettes/vapes, etc.
 
 Decision rules:
-	•	Count an item as trash if it appears discarded or waste-like, even if it's in someone's hand.
+	•	Count an item as trash if it appears discarded or waste-like, even if it’s in someone’s hand.
 	•	Do not flag normal household items or living plants as trash.
-	•	If it could be "food being eaten" vs "waste/litter," use visual cues (e.g., peeled rind dangling/separated usually indicates waste).
+	•	If it could be “food being eaten” vs “waste/litter,” use visual cues (e.g., peeled rind dangling/separated usually indicates waste).
 	•	Provide a confidence level (High/Medium/Low).
 
-Category Classification (REQUIRED when trash is detected):
-You MUST always classify detected trash into one of these three categories:
-- "Organic": Food waste, fruit peels, vegetable scraps, compostable materials, organic matter
-- "Recyclables": Plastic bottles, cans, paper, cardboard, glass, recyclable materials
-- "Landfill": Non-recyclable items, mixed materials, items that must go to landfill, general waste
+⸻
 
-IMPORTANT: If trash_detected is "Yes", you MUST include a category field. The category is required and cannot be null or missing.
+Category Classification (REQUIRED when trash is detected)
 
-Format your response as JSON with these fields:
-- trash_detected: "Yes" or "No"
-- trash_type: array of trash items found (e.g., ["Orange peel", "Plastic bottle"])
-- category: "Organic", "Recyclables", or "Landfill" (REQUIRED if trash_detected is "Yes", can be null if "No")
-- confidence: "High", "Medium", or "Low"
-- location_description: description of where the trash is located
-- recommendations: array of cleanup recommendations
+If trash_detected is "Yes", you MUST classify detected trash into one of these categories:
+	•	"Organic": Food waste, fruit peels, vegetable scraps, compostable materials, organic matter
+	•	"Recyclables": Plastic bottles, cans, paper, cardboard, glass, recyclable materials
+	•	"Landfill": Non-recyclable items, mixed materials, items that must go to landfill, general waste
 
-Example response when trash is detected:
+IMPORTANT: If trash_detected is "Yes", you MUST include a non-null category field.
+
+⸻
+
+Human-friendly explanation (REQUIRED)
+
+CRITICAL LANGUAGE REQUIREMENT: The "what_to_do" field MUST ALWAYS be written in SPANISH, regardless of whether trash is detected or not.
+
+If trash_detected is "Yes", you MUST also include:
+	•	summary: A short, human-friendly description of what was detected (1–2 sentences, English is OK).
+	•	what_to_do: MUST be in SPANISH, written for a 3-year-old child:
+		- Use VERY simple words (2-3 syllables max when possible)
+		- Use short sentences (3-5 words max)
+		- Friendly, encouraging tone
+		- 1–2 sentences max (keep it very brief)
+		- Must tell exactly where to put it based on category:
+			* Organic → "bote de orgánicos" or "bote de composta" (if available) or "bote de basura"
+			* Recyclables → "bote de reciclaje" (only if clean/dry) otherwise "bote de basura"
+			* Landfill → "bote de basura"
+		- Use simple verbs like "pon", "tira", "guarda"
+		- Examples: "Pon la cáscara en el bote de orgánicos." or "Tira esto en el bote de basura."
+
+If trash_detected is "No", still include summary (e.g., "No visible litter detected." in English) and set what_to_do in SPANISH for a 3-year-old: "¡No hay basura! ¡Todo está bien!"
+
+⸻
+
+Output format (JSON only)
+
+Respond ONLY as JSON with these fields:
+	•	trash_detected: "Yes" or "No"
+	•	trash_type: array of trash items found (e.g., ["Orange peel", "Plastic bottle"])
+	•	category: "Organic", "Recyclables", or "Landfill" (REQUIRED if "Yes", can be null if "No")
+	•	confidence: "High", "Medium", or "Low"
+	•	location_description: description of where the trash is located
+	•	recommendations: array of cleanup recommendations
+	•	summary: human-friendly description of what you see in English (REQUIRED)
+	•	what_to_do: MUST be in SPANISH, simple instructions for a 3-year-old child (REQUIRED)
+
+Example response when trash is detected
+
 {
   "trash_detected": "Yes",
   "trash_type": ["Orange peel"],
   "category": "Organic",
   "confidence": "High",
   "location_description": "In person's hand",
-  "recommendations": ["Dispose in compost bin"]
+  "recommendations": ["Place in organics/compost bin if available, otherwise regular trash."],
+  "summary": "An orange peel is visible, which counts as organic waste.",
+  "what_to_do": "Pon la cáscara en el bote de orgánicos."
 }
 
-Output: Respond ONLY as JSON with the above fields. Always include the category field when trash_detected is "Yes".
+Example response when no trash is detected
 
+{
+  "trash_detected": "No",
+  "trash_type": [],
+  "category": null,
+  "confidence": "High",
+  "location_description": "Not applicable",
+  "recommendations": [],
+  "summary": "No visible litter detected.",
+  "what_to_do": "¡No hay basura! ¡Todo está bien!"
+}
+
+CRITICAL REMINDER: The "what_to_do" field MUST ALWAYS be in SPANISH and written for a 3-year-old child with very simple words and short sentences.
+
+Output: Respond ONLY as JSON with the above fields. Always include category, summary, and what_to_do when trash_detected is "Yes". The what_to_do field MUST be in SPANISH.
