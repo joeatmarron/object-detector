@@ -6,9 +6,11 @@ A simple trash detection system using Google Gemini Vision API and a camera modu
 
 - 📸 Camera capture using OpenCV (supports Raspberry Pi Camera Module and USB cameras)
 - 🤖 AI-powered trash detection using Google Gemini Vision API
+- 🗂️ **Trash categorization** - Classifies trash as Organic, Recyclables, or Landfill
 - 💾 Automatic saving of captured images and detection results
 - 📊 JSON output with detailed detection information
 - 🔧 Easy configuration via environment variables
+- 📝 **Editable prompt** - Modify `prompt.txt` to adjust detection behavior without changing code
 - 🔌 **GPIO hardware outputs** - Control LEDs, buzzers, and other devices when trash is detected
 
 ## Prerequisites
@@ -233,6 +235,18 @@ The script exits with code 0 if no trash is detected, and code 1 if trash is det
 ```bash
 python3 trash_detector.py && echo "No trash found" || echo "Trash detected!"
 ```
+
+## Customizing the Detection Prompt
+
+The detection prompt is stored in `prompt.txt` for easy editing. You can modify this file to:
+- Adjust detection sensitivity
+- Change category definitions
+- Modify output format requirements
+- Update examples
+
+The code will automatically load the prompt from `prompt.txt`. If the file doesn't exist, it will use a built-in default prompt.
+
+**Note:** After modifying `prompt.txt`, you don't need to restart anything - the prompt is loaded fresh each time `detect_trash()` is called.
 
 ## Troubleshooting
 

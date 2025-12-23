@@ -30,8 +30,23 @@ except ImportError:
 # Load environment variables
 load_dotenv()
 
+# Constants
+MODEL_ALTERNATIVES = [
+    "gemini-2.0-flash-exp",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-pro-vision",
+    "gemini-pro",
+]
+
+CATEGORY_EMOJI = {
+    'Organic': '🍃',
+    'Recyclables': '♻️',
+    'Landfill': '🗑️'
+}
+
 class TrashDetector:
-    def __init__(self, api_key=None, model_name="gemini-1.5-flash", enable_gpio=False, led_pin=18, buzzer_pin=None):
+    def __init__(self, api_key=None, model_name="gemini-2.0-flash-exp", enable_gpio=False, led_pin=18, buzzer_pin=None):
         """
         Initialize the Trash Detector
         
@@ -88,6 +103,92 @@ class TrashDetector:
         except Exception as e:
             print(f"Error listing models: {e}")
             return []
+    
+    def _try_alternative_models(self, prompt, image, original_error):
+        """Try alternative models with PIL image"""
+        for alt_model in MODEL_ALTERNATIVES:
+            if alt_model == self.model_name:
+                continue
+            try:
+                print(f"Trying model: {alt_model}")
+                response = self.client.models.generate_content(
+                    model=alt_model,
+                    contents=[prompt, image]
+                )
+                self.model_name = alt_model
+                print(f"Successfully using model: {alt_model}")
+                return response.text if hasattr(response, 'text') else str(response)
+            except Exception:
+                continue
+        return None
+    
+    def _try_alternative_models_base64(self, prompt, image_bytes, original_error):
+        """Try alternative models with base64 image"""
+        for alt_model in MODEL_ALTERNATIVES:
+            if alt_model == self.model_name:
+                continue
+            try:
+                print(f"Trying model: {alt_model}")
+                try:
+                    from google.genai.types import Content, Part, Blob
+                    blob = Blob(data=image_bytes, mime_type="image/jpeg")
+                    content = Content(
+                        parts=[
+                            Part(text=prompt),
+                            Part(inline_data=blob)
+                        ]
+                    )
+                    response = self.client.models.generate_content(
+                        model=alt_model,
+                        contents=[content]
+                    )
+                except (ImportError, AttributeError, TypeError):
+                    response = self.client.models.generate_content(
+                        model=alt_model,
+                        contents=[prompt, {
+                            "mime_type": "image/jpeg",
+                            "data": image_bytes
+                        }]
+                    )
+                self.model_name = alt_model
+                print(f"Successfully using model: {alt_model}")
+                return response.text if hasattr(response, 'text') else str(response)
+            except Exception:
+                continue
+        return None
+    
+    def _display_results(self, results, results_path, width=50):
+        """Display detection results in a formatted way"""
+        print(f"\n{'='*width}")
+        print("DETECTION RESULTS")
+        print(f"{'='*width}")
+        print(f"Timestamp: {results.get('timestamp', 'N/A')}")
+        print(f"Trash Detected: {'YES' if results.get('detected') else 'NO'}")
+        
+        if results.get('trash_type'):
+            trash_type = results.get('trash_type')
+            if isinstance(trash_type, list):
+                print(f"Trash Type: {', '.join(trash_type)}")
+            else:
+                print(f"Trash Type: {trash_type}")
+        
+        if results.get('category'):
+            category = results.get('category')
+            emoji = CATEGORY_EMOJI.get(category, '📦')
+            print(f"Category: {emoji} {category}")
+        
+        if results.get('confidence'):
+            print(f"Confidence: {results.get('confidence')}")
+        
+        if results.get('location') or results.get('location_description'):
+            location = results.get('location') or results.get('location_description')
+            print(f"Location: {location}")
+        
+        if results.get('error'):
+            print(f"Error: {results.get('error')}")
+        
+        print(f"\nFull response saved to: {results_path}")
+        print(f"{'='*width}\n")
         
     def initialize_camera(self, camera_index=0):
         """
@@ -143,67 +244,37 @@ class TrashDetector:
         image_base64 = base64.b64encode(buffer).decode('utf-8')
         return image_base64
     
+    def _load_prompt(self):
+        """Load prompt from prompt.txt file"""
+        prompt_file = Path(__file__).parent / "prompt.txt"
+        if not prompt_file.exists():
+            raise FileNotFoundError(
+                f"Prompt file not found: {prompt_file}\n"
+                f"Please create prompt.txt in the project root directory."
+            )
+        
+        try:
+            with open(prompt_file, 'r', encoding='utf-8') as f:
+                prompt = f.read().strip()
+                if not prompt:
+                    raise ValueError(f"Prompt file {prompt_file} is empty")
+                return prompt
+        except Exception as e:
+            raise RuntimeError(f"Failed to load prompt from {prompt_file}: {e}")
+    
     def detect_trash(self, image, prompt=None):
         """
         Use Gemini to detect trash in the image
         
         Args:
             image: numpy array image from OpenCV
-            prompt: Custom prompt for detection (optional)
+            prompt: Custom prompt for detection (optional, if None loads from prompt.txt)
             
         Returns:
             dict: Detection results with confidence and details
         """
         if prompt is None:
-            prompt = """You are an image analysis system for trash/litter detection.
-
-Task: Determine whether any trash/litter is visible anywhere in the image (including items being held, hanging, on furniture, or on the ground).
-
-Important: Trash/litter includes organic/biodegradable waste such as:
-	•	fruit peels (orange/banana), cores, shells, leftover food scraps
-	•	napkins/tissues/paper scraps
-	•	plant trimmings that appear discarded (not living plants)
-
-Also include common non-organic trash such as:
-	•	plastic bottles/bags, wrappers, cans, cups, cigarettes/vapes, etc.
-
-Decision rules:
-	•	Count an item as trash if it appears discarded or waste-like, even if it's in someone's hand.
-	•	Do not flag normal household items or living plants as trash.
-	•	If it could be "food being eaten" vs "waste/litter," use visual cues (e.g., peeled rind dangling/separated usually indicates waste).
-	•	Provide a confidence level (High/Medium/Low).
-
-Category Classification (REQUIRED when trash is detected):
-You MUST always classify detected trash into one of these three categories:
-- "Organic": Food waste, fruit peels, vegetable scraps, compostable materials, organic matter
-- "Recyclables": Plastic bottles, cans, paper, cardboard, glass, recyclable materials
-- "Landfill": Non-recyclable items, mixed materials, items that must go to landfill, general waste
-
-IMPORTANT: If trash_detected is "Yes", you MUST include a category field. The category is required and cannot be null or missing.
-
-Format your response as JSON with these fields:
-- trash_detected: "Yes" or "No"
-- trash_type: array of trash items found (e.g., ["Orange peel", "Plastic bottle"])
-- category: "Organic", "Recyclables", or "Landfill" (REQUIRED if trash_detected is "Yes", can be null if "No")
-- confidence: "High", "Medium", or "Low"
-- location_description: description of where the trash is located
-- recommendations: array of cleanup recommendations
-
-Example response when trash is detected:
-{
-  "trash_detected": "Yes",
-  "trash_type": ["Orange peel"],
-  "category": "Organic",
-  "confidence": "High",
-  "location_description": "In person's hand",
-  "recommendations": ["Dispose in compost bin"]
-}
-
-Output: Respond ONLY as JSON with the above fields. Always include the category field when trash_detected is "Yes".
-	2.	trash_type (array of strings; be specific)
-	3.	confidence (High/Medium/Low)
-	4.	location_description
-	5.	recommendations (array of strings)"""
+            prompt = self._load_prompt()
         
         # Convert image to format compatible with Gemini API
         # Try PIL Image first (preferred)
@@ -244,31 +315,8 @@ Output: Respond ONLY as JSON with the above fields. Always include the category 
                 # If model not found, try alternatives
                 if "404" in error_str or "not found" in error_str.lower():
                     print(f"Model '{self.model_name}' not found. Trying alternatives...")
-                    alternatives = [
-                        "gemini-2.0-flash-exp",
-                        "gemini-1.5-flash",
-                        "gemini-1.5-pro",
-                        "gemini-pro-vision",
-                        "gemini-pro",
-                    ]
-                    
-                    for alt_model in alternatives:
-                        if alt_model == self.model_name:
-                            continue
-                        try:
-                            print(f"Trying model: {alt_model}")
-                            response = self.client.models.generate_content(
-                                model=alt_model,
-                                contents=[prompt, pil_image]
-                            )
-                            self.model_name = alt_model
-                            print(f"Successfully using model: {alt_model}")
-                            response_text = response.text if hasattr(response, 'text') else str(response)
-                            break
-                        except Exception:
-                            continue
-                    else:
-                        # All alternatives failed
+                    response_text = self._try_alternative_models(prompt, pil_image, error_str)
+                    if not response_text:
                         raise RuntimeError(
                             f"Failed to find a working model. "
                             f"Original error: {error_str[:200]}. "
@@ -334,51 +382,8 @@ Output: Respond ONLY as JSON with the above fields. Always include the category 
                 # If model not found, try alternatives
                 if "404" in error_str or "not found" in error_str.lower():
                     print(f"Model '{self.model_name}' not found. Trying alternatives...")
-                    alternatives = [
-                        "gemini-2.0-flash-exp",
-                        "gemini-1.5-flash",
-                        "gemini-1.5-pro",
-                        "gemini-pro-vision",
-                        "gemini-pro",
-                    ]
-                    
-                    for alt_model in alternatives:
-                        if alt_model == self.model_name:
-                            continue
-                        try:
-                            print(f"Trying model: {alt_model}")
-                            # Try with Content/Part first
-                            try:
-                                from google.genai.types import Content, Part, Blob
-                                blob = Blob(data=image_bytes, mime_type="image/jpeg")
-                                content = Content(
-                                    parts=[
-                                        Part(text=prompt),
-                                        Part(inline_data=blob)
-                                    ]
-                                )
-                                response = self.client.models.generate_content(
-                                    model=alt_model,
-                                    contents=[content]
-                                )
-                            except (ImportError, AttributeError, TypeError):
-                                # Fallback to simple format
-                                response = self.client.models.generate_content(
-                                    model=alt_model,
-                                    contents=[prompt, {
-                                        "mime_type": "image/jpeg",
-                                        "data": image_bytes
-                                    }]
-                                )
-                            
-                            self.model_name = alt_model
-                            print(f"Successfully using model: {alt_model}")
-                            response_text = response.text if hasattr(response, 'text') else str(response)
-                            break
-                        except Exception:
-                            continue
-                    else:
-                        # All alternatives failed
+                    response_text = self._try_alternative_models_base64(prompt, image_bytes, error_str)
+                    if not response_text:
                         return {
                             "timestamp": datetime.now().isoformat(),
                             "error": f"Failed to find a working model. Original error: {error_str[:200]}",
@@ -503,34 +508,7 @@ Output: Respond ONLY as JSON with the above fields. Always include the category 
         with open(results_path, 'w') as f:
             json.dump(results, f, indent=2)
         
-        print(f"\n{'='*50}")
-        print("DETECTION RESULTS")
-        print(f"{'='*50}")
-        print(f"Timestamp: {results.get('timestamp', 'N/A')}")
-        print(f"Trash Detected: {'YES' if results.get('detected') else 'NO'}")
-        if results.get('trash_type'):
-            trash_type = results.get('trash_type')
-            if isinstance(trash_type, list):
-                print(f"Trash Type: {', '.join(trash_type)}")
-            else:
-                print(f"Trash Type: {trash_type}")
-        if results.get('category'):
-            category = results.get('category')
-            # Add emoji for visual clarity
-            category_emoji = {
-                'Organic': '🍃',
-                'Recyclables': '♻️',
-                'Landfill': '🗑️'
-            }
-            emoji = category_emoji.get(category, '📦')
-            print(f"Category: {emoji} {category}")
-        if results.get('confidence'):
-            print(f"Confidence: {results.get('confidence')}")
-        if results.get('location') or results.get('location_description'):
-            location = results.get('location') or results.get('location_description')
-            print(f"Location: {location}")
-        print(f"\nFull response saved to: {results_path}")
-        print(f"{'='*50}\n")
+        self._display_results(results, results_path, width=50)
         
         # Trigger hardware outputs if enabled
         if self.gpio_enabled:
@@ -651,36 +629,7 @@ Output: Respond ONLY as JSON with the above fields. Always include the category 
                         json.dump(results, f, indent=2)
                     
                     # Display results
-                    print(f"\n{'='*60}")
-                    print("DETECTION RESULTS")
-                    print(f"{'='*60}")
-                    print(f"Timestamp: {results.get('timestamp', 'N/A')}")
-                    print(f"Trash Detected: {'YES' if results.get('detected') else 'NO'}")
-                    if results.get('trash_type'):
-                        trash_type = results.get('trash_type')
-                        if isinstance(trash_type, list):
-                            print(f"Trash Type: {', '.join(trash_type)}")
-                        else:
-                            print(f"Trash Type: {trash_type}")
-                    if results.get('category'):
-                        category = results.get('category')
-                        # Add emoji for visual clarity
-                        category_emoji = {
-                            'Organic': '🍃',
-                            'Recyclables': '♻️',
-                            'Landfill': '🗑️'
-                        }
-                        emoji = category_emoji.get(category, '📦')
-                        print(f"Category: {emoji} {category}")
-                    if results.get('confidence'):
-                        print(f"Confidence: {results.get('confidence')}")
-                    if results.get('location') or results.get('location_description'):
-                        location = results.get('location') or results.get('location_description')
-                        print(f"Location: {location}")
-                    if results.get('error'):
-                        print(f"Error: {results.get('error')}")
-                    print(f"\nFull response saved to: {results_path}")
-                    print(f"{'='*60}\n")
+                    self._display_results(results, results_path, width=60)
                     
                     # Trigger hardware outputs if enabled
                     if self.gpio_enabled:
