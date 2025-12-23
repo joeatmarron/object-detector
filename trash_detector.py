@@ -35,9 +35,17 @@ try:
     import tempfile
     import subprocess
     import platform
+    import threading
+    try:
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        RETRY_AVAILABLE = True
+    except ImportError:
+        RETRY_AVAILABLE = False
     TTS_AVAILABLE = True
 except ImportError:
     TTS_AVAILABLE = False
+    RETRY_AVAILABLE = False
     print("Note: Text-to-speech dependencies not available. Install with: pip3 install requests")
 
 # Load environment variables
@@ -92,7 +100,7 @@ class TrashDetector:
             enable_tts: Enable text-to-speech using Eleven Labs API
             elevenlabs_api_key: Eleven Labs API key (or set ELEVENLABS_API_KEY env var)
             elevenlabs_voice_id: Eleven Labs voice ID (default: "21m00Tcm4TlvDq8ikWAM" - Rachel)
-            elevenlabs_model: Eleven Labs model ID (default: "eleven_multilingual_v2", or "eleven_v3" for alpha)
+            elevenlabs_model: Eleven Labs model ID (default: "eleven_turbo_v2_5" for low latency, or "eleven_v3" for better quality with annotations)
         """
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
@@ -151,20 +159,42 @@ class TrashDetector:
                 self.elevenlabs_voice_id = None  # Will be selected with rotation each time
                 self.last_voice_id = None  # Track last used voice to ensure rotation
         
-        # Default to v3 model for better annotation support (supports [whispers], [giggles], etc.)
-        self.elevenlabs_model = elevenlabs_model or os.getenv("ELEVENLABS_MODEL", "eleven_v3")
+        # Default to faster model for lower latency (eleven_turbo_v2_5 is ~75ms vs ~200ms for eleven_v3)
+        # Use eleven_v3 if you need full annotation support ([whispers], [giggles], etc.)
+        self.elevenlabs_model = elevenlabs_model or os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
         
+        # TTS setup
         if self.tts_enabled:
             if not self.elevenlabs_api_key:
                 print("Warning: TTS enabled but ELEVENLABS_API_KEY not found. TTS disabled.")
                 self.tts_enabled = False
             else:
+                # Create HTTP session with connection pooling for better performance
+                try:
+                    self.tts_session = requests.Session()
+                    if RETRY_AVAILABLE:
+                        retry_strategy = Retry(
+                            total=2,
+                            backoff_factor=0.1,
+                            status_forcelist=[429, 500, 502, 503, 504]
+                        )
+                        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=1, pool_maxsize=1)
+                        self.tts_session.mount("https://", adapter)
+                except Exception:
+                    # Fallback if urllib3 not available
+                    self.tts_session = requests
+                
+                # Enable streaming for lower latency
+                self.use_streaming = os.getenv("ELEVENLABS_STREAMING", "true").lower() == "true"
+                
                 if self.use_random_voice:
-                    print(f"Text-to-speech enabled with rotating voice selection from {len(ELEVENLABS_VOICES)} voices (always different), model: {self.elevenlabs_model}")
+                    print(f"Text-to-speech enabled with rotating voice selection from {len(ELEVENLABS_VOICES)} voices (always different), model: {self.elevenlabs_model}, streaming: {self.use_streaming}")
                 else:
-                    print(f"Text-to-speech enabled with voice ID: {self.elevenlabs_voice_id}, model: {self.elevenlabs_model}")
+                    print(f"Text-to-speech enabled with voice ID: {self.elevenlabs_voice_id}, model: {self.elevenlabs_model}, streaming: {self.use_streaming}")
         elif enable_tts and not TTS_AVAILABLE:
             print("Warning: TTS requested but dependencies not available. Install with: pip3 install requests")
+        else:
+            self.tts_session = None
     
     def _list_available_models(self):
         """List available models from the API"""
@@ -609,9 +639,9 @@ class TrashDetector:
         if self.gpio_enabled:
             self.trigger_hardware_output(results.get('detected', False))
         
-        # Play text-to-speech for what_to_do if available
+        # Play text-to-speech for what_to_do if available (async to not block)
         if results.get('what_to_do'):
-            self._text_to_speech(results.get('what_to_do'))
+            self._text_to_speech(results.get('what_to_do'), async_mode=True)
         
         return results
     
@@ -679,6 +709,23 @@ class TrashDetector:
         
         frame_count = 0
         
+        # Track flash state for non-blocking colored screens
+        flash_state = {
+            'active': False,
+            'start_time': None,
+            'duration': 0,
+            'color': None,
+            'type': None  # 'green' for capture, 'category' for category flash
+        }
+        
+        # Track results display state for non-blocking overlay
+        results_overlay = {
+            'active': False,
+            'start_time': None,
+            'duration': 10.0,  # Show results for 10 seconds (longer for accessibility)
+            'data': None  # Will store results dict
+        }
+        
         try:
             while True:
                 # Read frame from camera
@@ -689,6 +736,155 @@ class TrashDetector:
                 
                 # Display the frame
                 display_frame = frame.copy()
+                
+                # Check if we're in a flash period and overlay color if needed
+                current_time = datetime.now().timestamp()
+                if flash_state['active'] and flash_state['start_time']:
+                    elapsed = current_time - flash_state['start_time']
+                    if elapsed < flash_state['duration']:
+                        # Still in flash period - overlay the color
+                        overlay = display_frame.copy()
+                        overlay[:] = flash_state['color']
+                        # Blend overlay with original (optional: you can make it fully opaque)
+                        display_frame = overlay
+                    else:
+                        # Flash period ended
+                        flash_state['active'] = False
+                        flash_state['start_time'] = None
+                
+                # Check if we should show results overlay
+                if results_overlay['active'] and results_overlay['start_time']:
+                    elapsed = current_time - results_overlay['start_time']
+                    if elapsed < results_overlay['duration'] and results_overlay['data']:
+                        # Draw results overlay on frame - CENTERED for accessibility
+                        results = results_overlay['data']
+                        height, width = display_frame.shape[:2]
+                        
+                        if results.get('detected'):
+                            # Get category for display
+                            category = results.get('category', '')
+                            
+                            # Translate category to Spanish for display
+                            category_translations = {
+                                'Organic': 'ORGÁNICO',
+                                'Recyclables': 'INORGÁNICO',
+                                'Landfill': 'BASURA GENERAL',
+                                'Dangerous': 'PELIGROSO'
+                            }
+                            category_display = category_translations.get(category, category.upper() if category else '')
+                            
+                            # Calculate text positions for centering
+                            # Main category text (LARGE for accessibility)
+                            text_height = 0  # Initialize for use in what_to_do positioning
+                            if category and category_display:
+                                category_text = category_display  # Spanish category name, already uppercase
+                                # Use different colors for different categories (high contrast)
+                                category_colors = {
+                                    'Organic': (0, 255, 0),      # Green (BGR)
+                                    'Recyclables': (255, 255, 255), # White (BGR) - high contrast
+                                    'Landfill': (255, 255, 255),    # White (BGR) - high contrast
+                                    'Dangerous': (0, 0, 255)      # Red (BGR)
+                                }
+                                category_color = category_colors.get(category, (255, 255, 255))
+                                
+                                # Calculate text size and position for centering
+                                font_scale = 3.0  # Much larger for accessibility
+                                thickness = 5
+                                (text_width, text_height), baseline = cv2.getTextSize(
+                                    category_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
+                                )
+                                
+                                # Center horizontally and vertically
+                                x_pos = (width - text_width) // 2
+                                y_pos = (height + text_height) // 2  # Center vertically
+                                
+                                # Draw text with outline for better visibility
+                                # Draw black outline first
+                                cv2.putText(display_frame, category_text, (x_pos, y_pos), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness + 2)
+                                # Draw colored text on top
+                                cv2.putText(display_frame, category_text, (x_pos, y_pos), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, category_color, thickness)
+                            
+                            # Add what_to_do_display if available (centered, smaller text below category)
+                            # Use what_to_do_display (without annotations) for display, fallback to what_to_do
+                            what_to_do_display = results.get('what_to_do_display') or results.get('what_to_do', '')
+                            if what_to_do_display:
+                                # Wrap text to fit on screen (approximately 60 characters per line for centered text)
+                                wrapped_lines = self._wrap_text(what_to_do_display, max_width=60)
+                                
+                                # Calculate starting y position (below category text)
+                                font_scale_instruction = 1.2  # Larger than before for accessibility
+                                thickness_instruction = 3
+                                line_height = 50  # More spacing between lines
+                                
+                                # Start below the category text (or center if no category)
+                                if category:
+                                    start_y = (height + text_height) // 2 + 100
+                                else:
+                                    start_y = height // 2 + 50
+                                
+                                for i, line in enumerate(wrapped_lines):
+                                    (line_width, line_height_text), _ = cv2.getTextSize(
+                                        line, cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, thickness_instruction
+                                    )
+                                    line_x = (width - line_width) // 2  # Center each line
+                                    line_y = start_y + (i * line_height)
+                                    
+                                    # Draw black outline first for visibility
+                                    cv2.putText(display_frame, line, (line_x, line_y), 
+                                               cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, (0, 0, 0), thickness_instruction + 2)
+                                    # Draw white text on top
+                                    cv2.putText(display_frame, line, (line_x, line_y), 
+                                               cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, (255, 255, 255), thickness_instruction)
+                        else:
+                            result_text = "NO TRASH DETECTED"
+                            color = (0, 255, 0)  # Green
+                            
+                            # Center the "No trash" text
+                            font_scale = 2.0
+                            thickness = 4
+                            (text_width, text_height), baseline = cv2.getTextSize(
+                                result_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
+                            )
+                            x_pos = (width - text_width) // 2
+                            y_pos = (height + text_height) // 2
+                            
+                            # Draw with outline
+                            cv2.putText(display_frame, result_text, (x_pos, y_pos), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness + 2)
+                            cv2.putText(display_frame, result_text, (x_pos, y_pos), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
+                            
+                            # Show what_to_do_display even when no trash is detected
+                            # Use what_to_do_display (without annotations) for display, fallback to what_to_do
+                            what_to_do_display = results.get('what_to_do_display') or results.get('what_to_do', '')
+                            if what_to_do_display:
+                                wrapped_lines = self._wrap_text(what_to_do_display, max_width=60)
+                                
+                                font_scale_instruction = 1.2
+                                thickness_instruction = 3
+                                line_height = 50
+                                start_y = y_pos + 100
+                                
+                                for i, line in enumerate(wrapped_lines):
+                                    (line_width, line_height_text), _ = cv2.getTextSize(
+                                        line, cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, thickness_instruction
+                                    )
+                                    line_x = (width - line_width) // 2
+                                    line_y = start_y + (i * line_height)
+                                    
+                                    # Draw with outline
+                                    cv2.putText(display_frame, line, (line_x, line_y), 
+                                               cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, (0, 0, 0), thickness_instruction + 2)
+                                    cv2.putText(display_frame, line, (line_x, line_y), 
+                                               cv2.FONT_HERSHEY_SIMPLEX, font_scale_instruction, (255, 255, 255), thickness_instruction)
+                    else:
+                        # Results overlay period ended
+                        results_overlay['active'] = False
+                        results_overlay['start_time'] = None
+                        results_overlay['data'] = None
+                
                 cv2.putText(display_frame, "Press 'C' to capture, 'Q' to quit", 
                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 cv2.putText(display_frame, f"Frame: {frame_count}", 
@@ -706,12 +902,12 @@ class TrashDetector:
                 
                 # Check for capture
                 if key == ord('c') or key == ord('C'):
-                    # Flash green screen for visual feedback
-                    height, width = frame.shape[:2]
-                    green_flash = np.zeros((height, width, 3), dtype=np.uint8)
-                    green_flash[:] = (0, 255, 0)  # Green color (BGR format)
-                    cv2.imshow("Trash Detector - Interactive Mode", green_flash)
-                    cv2.waitKey(100)  # Show green flash for 100ms
+                    # Flash green screen for visual feedback (non-blocking)
+                    flash_state['active'] = True
+                    flash_state['start_time'] = datetime.now().timestamp()
+                    flash_state['duration'] = 0.1  # 100ms
+                    flash_state['color'] = (0, 255, 0)  # Green (BGR)
+                    flash_state['type'] = 'green'
                     
                     print("\n" + "-"*60)
                     print("CAPTURING AND ANALYZING...")
@@ -741,10 +937,9 @@ class TrashDetector:
                     if self.gpio_enabled:
                         self.trigger_hardware_output(results.get('detected', False))
                     
-                    # Show category-based color flash for visual feedback
+                    # Show category-based color flash for visual feedback (non-blocking)
                     category = results.get('category')
                     if category:
-                        height, width = frame.shape[:2]
                         # Define colors in BGR format
                         category_colors = {
                             'Organic': (0, 165, 255),      # Orange (BGR)
@@ -753,70 +948,21 @@ class TrashDetector:
                             'Dangerous': (0, 0, 255)       # Red (BGR) - for dangerous items
                         }
                         flash_color = category_colors.get(category, (128, 128, 128))
-                        category_flash = np.zeros((height, width, 3), dtype=np.uint8)
-                        category_flash[:] = flash_color
-                        cv2.imshow("Trash Detector - Interactive Mode", category_flash)
-                        cv2.waitKey(2000)  # Show color flash for 2 seconds
+                        # Start non-blocking flash
+                        flash_state['active'] = True
+                        flash_state['start_time'] = datetime.now().timestamp()
+                        flash_state['duration'] = 8.0  # 8 seconds for accessibility (longer so people can read)
+                        flash_state['color'] = flash_color
+                        flash_state['type'] = 'category'
                     
-                    # Show result on frame briefly
-                    if results.get('detected'):
-                        result_text = "TRASH DETECTED!"
-                        color = (0, 0, 255)  # Red
-                        y_pos = 90
-                        cv2.putText(display_frame, result_text, (10, y_pos), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-                        
-                        # Add category if available
-                        if results.get('category'):
-                            category = results.get('category')
-                            category_text = f"Category: {category}"
-                            # Use different colors for different categories
-                            category_colors = {
-                                'Organic': (0, 255, 0),      # Green
-                                'Recyclables': (255, 165, 0), # Orange
-                                'Landfill': (0, 165, 255),    # Blue
-                                'Dangerous': (0, 0, 255)      # Red
-                            }
-                            category_color = category_colors.get(category, (255, 255, 255))
-                            y_pos += 40
-                            cv2.putText(display_frame, category_text, (10, y_pos), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, category_color, 2)
-                        
-                        # Add what_to_do if available
-                        if results.get('what_to_do'):
-                            what_to_do = results.get('what_to_do')
-                            y_pos += 50
-                            # Wrap text to fit on screen (approximately 50 characters per line)
-                            wrapped_lines = self._wrap_text(what_to_do, max_width=50)
-                            for line in wrapped_lines:
-                                cv2.putText(display_frame, line, (10, y_pos), 
-                                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-                                y_pos += 30
-                            
-                            # Play text-to-speech
-                            self._text_to_speech(what_to_do)
-                    else:
-                        result_text = "No trash"
-                        color = (0, 255, 0)  # Green
-                        y_pos = 90
-                        cv2.putText(display_frame, result_text, (10, y_pos), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-                        
-                        # Show what_to_do even when no trash is detected
-                        if results.get('what_to_do'):
-                            what_to_do = results.get('what_to_do')
-                            y_pos += 50
-                            wrapped_lines = self._wrap_text(what_to_do, max_width=50)
-                            for line in wrapped_lines:
-                                cv2.putText(display_frame, line, (10, y_pos), 
-                                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-                                y_pos += 30
-                            
-                            # Play text-to-speech
-                            self._text_to_speech(what_to_do)
+                    # Start non-blocking results overlay
+                    results_overlay['active'] = True
+                    results_overlay['start_time'] = datetime.now().timestamp()
+                    results_overlay['data'] = results
                     
-                    cv2.imshow("Trash Detector - Interactive Mode", display_frame)
-                    cv2.waitKey(2000)  # Show result for 2 seconds
+                    # Play text-to-speech if available (non-blocking)
+                    if results.get('what_to_do'):
+                        self._text_to_speech(results.get('what_to_do'), async_mode=True)
                 
                 frame_count += 1
                 
@@ -825,16 +971,26 @@ class TrashDetector:
         finally:
             cv2.destroyAllWindows()
     
-    def _text_to_speech(self, text):
+    def _text_to_speech(self, text, async_mode=False):
         """
-        Convert text to speech using Eleven Labs API
+        Convert text to speech using Eleven Labs API with latency optimizations
         
         Args:
             text: Text to convert to speech (should be in Spanish for what_to_do)
+            async_mode: If True, generate audio in background thread (non-blocking)
         """
         if not self.tts_enabled or not text:
             return
         
+        if async_mode:
+            # Generate audio in background thread to avoid blocking
+            thread = threading.Thread(target=self._text_to_speech_sync, args=(text,), daemon=True)
+            thread.start()
+        else:
+            self._text_to_speech_sync(text)
+    
+    def _text_to_speech_sync(self, text):
+        """Synchronous TTS generation with optimizations"""
         try:
             # Select voice: use configured voice or rotating selection (always different)
             if self.use_random_voice:
@@ -848,12 +1004,14 @@ class TrashDetector:
                 # Select a different voice from available ones
                 voice_id = random.choice(available_voices)
                 self.last_voice_id = voice_id  # Remember this voice for next time
-                # Optional: uncomment to see which voice was selected
-                # print(f"Using rotating voice: {voice_id}")
             else:
                 voice_id = self.elevenlabs_voice_id
             
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+            # Use streaming endpoint for lower latency (starts playing while generating)
+            if self.use_streaming:
+                url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+            else:
+                url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
             
             headers = {
                 "Accept": "audio/mpeg",
@@ -861,55 +1019,126 @@ class TrashDetector:
                 "xi-api-key": self.elevenlabs_api_key
             }
             
+            # Optimized settings for lower latency:
+            # - Lower stability = faster generation (but less consistent)
+            # - Lower similarity_boost = faster (but less voice accuracy)
+            # - Use speaker_boost for better quality at lower settings
+            # Note: Stability must be one of [0.0, 0.5, 1.0] (0.0=Creative/fast, 0.5=Natural, 1.0=Robust/slow)
             data = {
                 "text": text,
-                "model_id": self.elevenlabs_model,  # Use configured model (supports annotations like [whispers], [giggles], etc.)
+                "model_id": self.elevenlabs_model,  # Use turbo model for speed
                 "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.5,
+                    "stability": 0.0,  # 0.0 = Creative (fastest), 0.5 = Natural (balanced), 1.0 = Robust (slowest)
+                    "similarity_boost": 0.5,  # Keep at 0.5 for good voice accuracy
                     "style": 0.0,
                     "use_speaker_boost": True
-                }
+                },
+                "output_format": "mp3_44100_128"  # Optimized format: 44.1kHz, 128kbps (good quality, reasonable size)
             }
             
-            response = requests.post(url, json=data, headers=headers, timeout=10)
+            # Use session for connection pooling (faster subsequent requests)
+            session = self.tts_session if self.tts_session else requests
+            response = session.post(url, json=data, headers=headers, timeout=15, stream=self.use_streaming)
             
             if response.status_code == 200:
-                # Save to temporary file
+                if self.use_streaming:
+                    # Streaming mode: play audio as it arrives (lower latency)
+                    self._play_streaming_audio(response)
+                else:
+                    # Non-streaming: save to file then play
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                        tmp_file.write(response.content)
+                        tmp_path = tmp_file.name
+                    
+                    self._play_audio_file(tmp_path)
+                    
+                    # Clean up temp file
+                    try:
+                        os.unlink(tmp_path)
+                    except:
+                        pass
+            else:
+                print(f"Warning: Eleven Labs API error: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"Warning: Text-to-speech failed: {e}")
+    
+    def _play_streaming_audio(self, response):
+        """Play streaming audio as it arrives (lower latency)"""
+        try:
+            system = platform.system()
+            
+            # For streaming, we need to pipe directly to audio player
+            if system == "Linux":
+                # Use mpg123 with stdin for streaming (lowest latency)
+                for player in ["mpg123", "mpg321"]:
+                    try:
+                        process = subprocess.Popen(
+                            [player, "-"],  # "-" means read from stdin
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+                        # Stream audio chunks to player
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                process.stdin.write(chunk)
+                        process.stdin.close()
+                        process.wait()
+                        break
+                    except FileNotFoundError:
+                        continue
+                    except Exception:
+                        # Fallback to file-based if streaming fails
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    tmp_file.write(chunk)
+                            tmp_path = tmp_file.name
+                        self._play_audio_file(tmp_path)
+                        try:
+                            os.unlink(tmp_path)
+                        except:
+                            pass
+                        break
+            else:
+                # For macOS/Windows, fallback to file-based (streaming not easily supported)
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
-                    tmp_file.write(response.content)
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            tmp_file.write(chunk)
                     tmp_path = tmp_file.name
                 
-                # Play audio (works on Linux/Mac/Windows)
-                try:
-                    system = platform.system()
-                    if system == "Linux":
-                        # Try multiple audio players common on Linux/Raspberry Pi
-                        for player in ["mpg123", "mpg321", "ffplay", "aplay"]:
-                            try:
-                                subprocess.run([player, tmp_path], 
-                                             stdout=subprocess.DEVNULL, 
-                                             stderr=subprocess.DEVNULL,
-                                             check=False)
-                                break
-                            except FileNotFoundError:
-                                continue
-                    elif system == "Darwin":  # macOS
-                        subprocess.run(["afplay", tmp_path], check=False)
-                    elif system == "Windows":
-                        subprocess.run(["start", tmp_path], shell=True, check=False)
-                except Exception as e:
-                    print(f"Warning: Could not play audio: {e}")
+                self._play_audio_file(tmp_path)
                 
                 # Clean up temp file
                 try:
                     os.unlink(tmp_path)
                 except:
                     pass
-            else:
-                print(f"Warning: Eleven Labs API error: {response.status_code} - {response.text}")
         except Exception as e:
-            print(f"Warning: Text-to-speech failed: {e}")
+            print(f"Warning: Could not play streaming audio: {e}")
+    
+    def _play_audio_file(self, file_path):
+        """Play audio file using system audio player"""
+        try:
+            system = platform.system()
+            if system == "Linux":
+                # Try multiple audio players common on Linux/Raspberry Pi
+                for player in ["mpg123", "mpg321", "ffplay", "aplay"]:
+                    try:
+                        subprocess.run([player, file_path], 
+                                     stdout=subprocess.DEVNULL, 
+                                     stderr=subprocess.DEVNULL,
+                                     check=False)
+                        break
+                    except FileNotFoundError:
+                        continue
+            elif system == "Darwin":  # macOS
+                subprocess.run(["afplay", file_path], check=False)
+            elif system == "Windows":
+                subprocess.run(["start", file_path], shell=True, check=False)
+        except Exception as e:
+            print(f"Warning: Could not play audio: {e}")
     
     def cleanup(self):
         """Release camera and GPIO resources"""
@@ -924,6 +1153,10 @@ class TrashDetector:
                 GPIO.output(self.buzzer_pin, GPIO.LOW)
             GPIO.cleanup()
             print("GPIO cleaned up")
+        
+        # Close TTS session
+        if hasattr(self, 'tts_session') and self.tts_session and hasattr(self.tts_session, 'close'):
+            self.tts_session.close()
 
 
 def main():
@@ -944,7 +1177,7 @@ def main():
     parser.add_argument("--tts", action="store_true", help="Enable text-to-speech using Eleven Labs API")
     parser.add_argument("--elevenlabs-api-key", type=str, help="Eleven Labs API key (or set ELEVENLABS_API_KEY env var)")
     parser.add_argument("--elevenlabs-voice-id", type=str, help="Eleven Labs voice ID (default: Rachel)")
-    parser.add_argument("--elevenlabs-model", type=str, help="Eleven Labs model ID (default: eleven_multilingual_v2, or use eleven_v3 for alpha)")
+    parser.add_argument("--elevenlabs-model", type=str, help="Eleven Labs model ID (default: eleven_turbo_v2_5 for low latency, or eleven_v3 for better quality)")
     parser.add_argument("--interactive", "-i", action="store_true", 
                        help="Interactive mode: show camera feed, press 'C' to capture, 'Q' to quit")
     

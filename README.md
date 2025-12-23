@@ -64,10 +64,17 @@ Add your Gemini API key:
 GEMINI_API_KEY=your_actual_api_key_here
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
-ELEVENLABS_MODEL=eleven_v3
+ELEVENLABS_MODEL=eleven_turbo_v2_5
+ELEVENLABS_STREAMING=true
 ```
 
-**Note:** The `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and `ELEVENLABS_MODEL` are optional and only needed if you want to enable text-to-speech functionality. The model defaults to `eleven_v3` which supports voice annotations like `[whispers]`, `[giggles]`, `[excitedly]`, etc.
+**Note:** The `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and `ELEVENLABS_MODEL` are optional and only needed if you want to enable text-to-speech functionality. 
+
+**Model Options:**
+- `eleven_turbo_v2_5` (default) - Fastest model, optimized for low latency (~75ms inference time)
+- `eleven_v3` - Better quality with full support for voice annotations like `[whispers]`, `[giggles]`, `[excitedly]`, etc., but slower
+
+**Streaming:** Set `ELEVENLABS_STREAMING=true` (default) to enable streaming mode, which starts playing audio while it's still being generated, reducing perceived latency.
 
 ## Usage
 
