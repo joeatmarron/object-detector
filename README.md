@@ -7,6 +7,7 @@ A simple trash detection system using Google Gemini Vision API and a camera modu
 - 📸 Camera capture using OpenCV (supports Raspberry Pi Camera Module and USB cameras)
 - 🤖 AI-powered trash detection using Google Gemini Vision API
 - 🗂️ **Trash categorization** - Classifies trash as Organic, Recyclables, or Landfill
+- 🔊 **Text-to-speech** - Speaks instructions in Spanish using Eleven Labs API (perfect for kids!)
 - 💾 Automatic saving of captured images and detection results
 - 📊 JSON output with detailed detection information
 - 🔧 Easy configuration via environment variables
@@ -61,7 +62,11 @@ nano .env
 Add your Gemini API key:
 ```
 GEMINI_API_KEY=your_actual_api_key_here
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 ```
+
+**Note:** The `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` are optional and only needed if you want to enable text-to-speech functionality.
 
 ## Usage
 
@@ -97,6 +102,9 @@ Available options:
 - `--gpio`: Enable GPIO hardware outputs (LED, buzzer)
 - `--led-pin`: GPIO pin for LED (default: 18)
 - `--buzzer-pin`: GPIO pin for buzzer (optional)
+- `--tts`: Enable text-to-speech using Eleven Labs API
+- `--elevenlabs-api-key`: Eleven Labs API key (or set ELEVENLABS_API_KEY env var)
+- `--elevenlabs-voice-id`: Eleven Labs voice ID (optional, defaults to Rachel)
 
 ### Examples
 
@@ -146,6 +154,15 @@ In interactive mode:
 - Press **'C'** to capture and analyze the current frame
 - Press **'Q'** or **ESC** to quit
 - Results are displayed in the terminal and saved to files
+
+**Enable text-to-speech (speaks the `what_to_do` instructions in Spanish):**
+```bash
+python3 trash_detector.py --tts
+# or with custom voice ID
+python3 trash_detector.py --tts --elevenlabs-voice-id YOUR_VOICE_ID
+```
+
+The text-to-speech will automatically speak the `what_to_do` field (in Spanish) after each detection. This is especially useful for children who can't read yet.
 
 See [HARDWARE_SETUP.md](HARDWARE_SETUP.md) for detailed wiring instructions.
 

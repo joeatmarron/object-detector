@@ -27,6 +27,17 @@ except ImportError:
     GPIO_AVAILABLE = False
     print("Note: RPi.GPIO not available. Hardware outputs disabled. Install with: pip3 install RPi.GPIO")
 
+# Optional text-to-speech support with Eleven Labs
+try:
+    import requests
+    import tempfile
+    import subprocess
+    import platform
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+    print("Note: Text-to-speech dependencies not available. Install with: pip3 install requests")
+
 # Load environment variables
 load_dotenv()
 
@@ -46,7 +57,7 @@ CATEGORY_EMOJI = {
 }
 
 class TrashDetector:
-    def __init__(self, api_key=None, model_name="gemini-2.0-flash-exp", enable_gpio=False, led_pin=18, buzzer_pin=None):
+    def __init__(self, api_key=None, model_name="gemini-2.0-flash-exp", enable_gpio=False, led_pin=18, buzzer_pin=None, enable_tts=False, elevenlabs_api_key=None, elevenlabs_voice_id=None):
         """
         Initialize the Trash Detector
         
@@ -57,6 +68,9 @@ class TrashDetector:
             enable_gpio: Enable GPIO hardware outputs (LED, buzzer, etc.)
             led_pin: GPIO pin number for LED (default: 18, BCM numbering)
             buzzer_pin: GPIO pin number for buzzer (optional, None to disable)
+            enable_tts: Enable text-to-speech using Eleven Labs API
+            elevenlabs_api_key: Eleven Labs API key (or set ELEVENLABS_API_KEY env var)
+            elevenlabs_voice_id: Eleven Labs voice ID (default: "21m00Tcm4TlvDq8ikWAM" - Rachel)
         """
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
@@ -93,6 +107,20 @@ class TrashDetector:
                   (f", Buzzer on pin {self.buzzer_pin}" if self.buzzer_pin else ""))
         elif enable_gpio and not GPIO_AVAILABLE:
             print("Warning: GPIO requested but RPi.GPIO not available. Install with: pip3 install RPi.GPIO")
+        
+        # Text-to-speech setup
+        self.tts_enabled = enable_tts and TTS_AVAILABLE
+        self.elevenlabs_api_key = elevenlabs_api_key or os.getenv("ELEVENLABS_API_KEY")
+        self.elevenlabs_voice_id = elevenlabs_voice_id or os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+        
+        if self.tts_enabled:
+            if not self.elevenlabs_api_key:
+                print("Warning: TTS enabled but ELEVENLABS_API_KEY not found. TTS disabled.")
+                self.tts_enabled = False
+            else:
+                print(f"Text-to-speech enabled with voice ID: {self.elevenlabs_voice_id}")
+        elif enable_tts and not TTS_AVAILABLE:
+            print("Warning: TTS requested but dependencies not available. Install with: pip3 install requests")
     
     def _list_available_models(self):
         """List available models from the API"""
@@ -537,6 +565,10 @@ class TrashDetector:
         if self.gpio_enabled:
             self.trigger_hardware_output(results.get('detected', False))
         
+        # Play text-to-speech for what_to_do if available
+        if results.get('what_to_do'):
+            self._text_to_speech(results.get('what_to_do'))
+        
         return results
     
     def trigger_hardware_output(self, detected, duration=2.0):
@@ -691,6 +723,9 @@ class TrashDetector:
                                 cv2.putText(display_frame, line, (10, y_pos), 
                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                                 y_pos += 30
+                            
+                            # Play text-to-speech
+                            self._text_to_speech(what_to_do)
                     else:
                         result_text = "No trash"
                         color = (0, 255, 0)  # Green
@@ -707,6 +742,9 @@ class TrashDetector:
                                 cv2.putText(display_frame, line, (10, y_pos), 
                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                                 y_pos += 30
+                            
+                            # Play text-to-speech
+                            self._text_to_speech(what_to_do)
                     
                     cv2.imshow("Trash Detector - Interactive Mode", display_frame)
                     cv2.waitKey(2000)  # Show result for 2 seconds
@@ -717,6 +755,73 @@ class TrashDetector:
             print("\nInterrupted by user")
         finally:
             cv2.destroyAllWindows()
+    
+    def _text_to_speech(self, text):
+        """
+        Convert text to speech using Eleven Labs API
+        
+        Args:
+            text: Text to convert to speech (should be in Spanish for what_to_do)
+        """
+        if not self.tts_enabled or not text:
+            return
+        
+        try:
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.elevenlabs_voice_id}"
+            
+            headers = {
+                "Accept": "audio/mpeg",
+                "Content-Type": "application/json",
+                "xi-api-key": self.elevenlabs_api_key
+            }
+            
+            data = {
+                "text": text,
+                "model_id": "eleven_multilingual_v2",  # Supports Spanish
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.5
+                }
+            }
+            
+            response = requests.post(url, json=data, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                # Save to temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                    tmp_file.write(response.content)
+                    tmp_path = tmp_file.name
+                
+                # Play audio (works on Linux/Mac/Windows)
+                try:
+                    system = platform.system()
+                    if system == "Linux":
+                        # Try multiple audio players common on Linux/Raspberry Pi
+                        for player in ["mpg123", "mpg321", "ffplay", "aplay"]:
+                            try:
+                                subprocess.run([player, tmp_path], 
+                                             stdout=subprocess.DEVNULL, 
+                                             stderr=subprocess.DEVNULL,
+                                             check=False)
+                                break
+                            except FileNotFoundError:
+                                continue
+                    elif system == "Darwin":  # macOS
+                        subprocess.run(["afplay", tmp_path], check=False)
+                    elif system == "Windows":
+                        subprocess.run(["start", tmp_path], shell=True, check=False)
+                except Exception as e:
+                    print(f"Warning: Could not play audio: {e}")
+                
+                # Clean up temp file
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+            else:
+                print(f"Warning: Eleven Labs API error: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"Warning: Text-to-speech failed: {e}")
     
     def cleanup(self):
         """Release camera and GPIO resources"""
@@ -748,6 +853,9 @@ def main():
     parser.add_argument("--gpio", action="store_true", help="Enable GPIO hardware outputs (LED, buzzer)")
     parser.add_argument("--led-pin", type=int, default=18, help="GPIO pin for LED (BCM numbering, default: 18)")
     parser.add_argument("--buzzer-pin", type=int, default=None, help="GPIO pin for buzzer (optional)")
+    parser.add_argument("--tts", action="store_true", help="Enable text-to-speech using Eleven Labs API")
+    parser.add_argument("--elevenlabs-api-key", type=str, help="Eleven Labs API key (or set ELEVENLABS_API_KEY env var)")
+    parser.add_argument("--elevenlabs-voice-id", type=str, help="Eleven Labs voice ID (default: Rachel)")
     parser.add_argument("--interactive", "-i", action="store_true", 
                        help="Interactive mode: show camera feed, press 'C' to capture, 'Q' to quit")
     
@@ -774,7 +882,10 @@ def main():
             model_name=args.model,
             enable_gpio=args.gpio,
             led_pin=args.led_pin,
-            buzzer_pin=args.buzzer_pin
+            buzzer_pin=args.buzzer_pin,
+            enable_tts=args.tts,
+            elevenlabs_api_key=args.elevenlabs_api_key,
+            elevenlabs_voice_id=args.elevenlabs_voice_id
         )
         
         # Initialize camera
