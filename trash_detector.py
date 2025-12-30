@@ -11,6 +11,7 @@ import base64
 import json
 import random
 import numpy as np
+import platform
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -86,7 +87,7 @@ ELEVENLABS_VOICES = [
 ]
 
 class TrashDetector:
-    def __init__(self, api_key=None, model_name="gemini-2.0-flash-exp", enable_gpio=False, led_pin=18, buzzer_pin=None, enable_tts=False, elevenlabs_api_key=None, elevenlabs_voice_id=None, elevenlabs_model=None):
+    def __init__(self, api_key=None, model_name="gemini-2.0-flash-exp", enable_gpio=False, led_pin=18, buzzer_pin=None, enable_tts=False, elevenlabs_api_key=None, elevenlabs_voice_id=None, elevenlabs_model=None, language="es"):
         """
         Initialize the Trash Detector
         
@@ -101,10 +102,128 @@ class TrashDetector:
             elevenlabs_api_key: Eleven Labs API key (or set ELEVENLABS_API_KEY env var)
             elevenlabs_voice_id: Eleven Labs voice ID (default: "21m00Tcm4TlvDq8ikWAM" - Rachel)
             elevenlabs_model: Eleven Labs model ID (default: "eleven_turbo_v2_5" for low latency, or "eleven_v3" for better quality with annotations)
+            language: Language code for prompts and responses (default: "es" for Spanish, "en" for English, etc.)
         """
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not found. Set it in .env file or pass as argument.")
+        
+        # Language support
+        self.language = language or os.getenv("LANGUAGE", "es")
+        
+        # Category translations for different languages
+        self.category_translations = {
+            'es': {
+                'Organic': 'ORGÁNICO',
+                'Recyclables': 'INORGÁNICO',
+                'Landfill': 'BASURA GENERAL',
+                'Dangerous': 'PELIGROSO'
+            },
+            'en': {
+                'Organic': 'ORGANIC',
+                'Recyclables': 'RECYCLABLES',
+                'Landfill': 'LANDFILL',
+                'Dangerous': 'DANGEROUS'
+            },
+            # Add more languages as needed
+            'fr': {
+                'Organic': 'ORGANIQUE',
+                'Recyclables': 'RECYCLABLES',
+                'Landfill': 'DÉCHARGE',
+                'Dangerous': 'DANGEREUX'
+            },
+            'de': {
+                'Organic': 'ORGANISCH',
+                'Recyclables': 'RECYCLING',
+                'Landfill': 'DEPONIE',
+                'Dangerous': 'GEFÄHRLICH'
+            },
+            'zh': {  # Chinese (Simplified)
+                'Organic': '有机',
+                'Recyclables': '可回收',
+                'Landfill': '一般垃圾',
+                'Dangerous': '危险'
+            },
+            'zh-tw': {  # Chinese (Traditional)
+                'Organic': '有機',
+                'Recyclables': '可回收',
+                'Landfill': '一般垃圾',
+                'Dangerous': '危險'
+            }
+        }
+        
+        # UI text translations
+        self.ui_text = {
+            'es': {
+                'interactive_mode': 'MODO INTERACTIVO',
+                'press_c_capture': "Presiona 'C' para capturar y analizar",
+                'press_q_quit': "Presiona 'Q' o ESC para salir",
+                'press_c_capture_q_quit': "Presiona 'C' para capturar, 'Q' para salir",
+                'frame': 'Fotograma',
+                'capturing': 'CAPTURANDO Y ANALIZANDO...',
+                'analyzing': 'Analizando imagen con Gemini...',
+                'trash_detected': '¡BASURA DETECTADA!',
+                'no_trash': 'No hay basura'
+            },
+            'en': {
+                'interactive_mode': 'INTERACTIVE MODE',
+                'press_c_capture': "Press 'C' to capture and analyze",
+                'press_q_quit': "Press 'Q' or ESC to quit",
+                'press_c_capture_q_quit': "Press 'C' to capture, 'Q' to quit",
+                'frame': 'Frame',
+                'capturing': 'CAPTURING AND ANALYZING...',
+                'analyzing': 'Analyzing image with Gemini...',
+                'trash_detected': 'TRASH DETECTED!',
+                'no_trash': 'No trash'
+            },
+            'fr': {
+                'interactive_mode': 'MODE INTERACTIF',
+                'press_c_capture': "Appuyez sur 'C' pour capturer et analyser",
+                'press_q_quit': "Appuyez sur 'Q' ou ESC pour quitter",
+                'press_c_capture_q_quit': "Appuyez sur 'C' pour capturer, 'Q' pour quitter",
+                'frame': 'Image',
+                'capturing': 'CAPTURE ET ANALYSE...',
+                'analyzing': 'Analyse de l\'image avec Gemini...',
+                'trash_detected': 'DÉCHET DÉTECTÉ!',
+                'no_trash': 'Pas de déchet'
+            },
+            'de': {
+                'interactive_mode': 'INTERAKTIVER MODUS',
+                'press_c_capture': "Drücken Sie 'C' zum Erfassen und Analysieren",
+                'press_q_quit': "Drücken Sie 'Q' oder ESC zum Beenden",
+                'press_c_capture_q_quit': "Drücken Sie 'C' zum Erfassen, 'Q' zum Beenden",
+                'frame': 'Bild',
+                'capturing': 'ERFASSUNG UND ANALYSE...',
+                'analyzing': 'Bildanalyse mit Gemini...',
+                'trash_detected': 'MÜLL ERKANNT!',
+                'no_trash': 'Kein Müll'
+            },
+            'zh': {  # Chinese (Simplified)
+                'interactive_mode': '交互模式',
+                'press_c_capture': "按 'C' 键捕获并分析",
+                'press_q_quit': "按 'Q' 或 ESC 退出",
+                'press_c_capture_q_quit': "按 'C' 捕获，'Q' 退出",
+                'frame': '帧',
+                'capturing': '正在捕获和分析...',
+                'analyzing': '正在使用 Gemini 分析图像...',
+                'trash_detected': '检测到垃圾！',
+                'no_trash': '无垃圾'
+            },
+            'zh-tw': {  # Chinese (Traditional)
+                'interactive_mode': '互動模式',
+                'press_c_capture': "按 'C' 鍵捕獲並分析",
+                'press_q_quit': "按 'Q' 或 ESC 退出",
+                'press_c_capture_q_quit': "按 'C' 捕獲，'Q' 退出",
+                'frame': '幀',
+                'capturing': '正在捕獲和分析...',
+                'analyzing': '正在使用 Gemini 分析圖像...',
+                'trash_detected': '檢測到垃圾！',
+                'no_trash': '無垃圾'
+            }
+        }
+        
+        # Get UI text for current language (fallback to English if not available)
+        self.ui = self.ui_text.get(self.language, self.ui_text['en'])
         
         # Initialize google.genai client
         self.model_name = model_name
@@ -340,27 +459,75 @@ class TrashDetector:
             img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
             draw = ImageDraw.Draw(img_pil)
             
-            # Try to load a font that supports UTF-8
+            # Try to load a font that supports UTF-8 (including Chinese characters)
             try:
-                # Try common system fonts that support UTF-8
-                font_paths = [
-                    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-                    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
-                    '/System/Library/Fonts/Helvetica.ttc',
-                    '/Windows/Fonts/arial.ttf',
-                ]
+                system = platform.system()
+                font_paths = []
+                
+                if system == "Darwin":  # macOS
+                    # macOS fonts that support Chinese
+                    font_paths = [
+                        '/System/Library/Fonts/PingFang.ttc',  # PingFang (Chinese font on macOS)
+                        '/System/Library/Fonts/STHeiti Light.ttc',  # STHeiti (Chinese font)
+                        '/System/Library/Fonts/STSong.ttc',  # STSong (Chinese font)
+                        '/System/Library/Fonts/Supplemental/Songti.ttc',  # Songti (Chinese font)
+                        '/System/Library/Fonts/Supplemental/Kaiti.ttc',  # Kaiti (Chinese font)
+                        '/Library/Fonts/Microsoft/SimHei.ttf',  # SimHei (if installed)
+                        '/System/Library/Fonts/Helvetica.ttc',  # Fallback
+                        '/System/Library/Fonts/Arial.ttf',  # Fallback
+                    ]
+                elif system == "Linux":
+                    # Linux fonts that support Chinese
+                    font_paths = [
+                        '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',  # WenQuanYi Micro Hei
+                        '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',  # WenQuanYi Zen Hei
+                        '/usr/share/fonts/truetype/arphic/ukai.ttc',  # AR PL UKai
+                        '/usr/share/fonts/truetype/arphic/uming.ttc',  # AR PL UMing
+                        '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',  # Noto Sans CJK
+                        '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf',  # Noto Sans CJK (OpenType)
+                        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',  # Fallback
+                        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',  # Fallback
+                    ]
+                elif system == "Windows":
+                    # Windows fonts that support Chinese
+                    font_paths = [
+                        'C:/Windows/Fonts/simsun.ttc',  # SimSun (Chinese font)
+                        'C:/Windows/Fonts/simhei.ttf',  # SimHei (Chinese font)
+                        'C:/Windows/Fonts/msyh.ttc',  # Microsoft YaHei (Chinese font)
+                        'C:/Windows/Fonts/simkai.ttf',  # SimKai (Chinese font)
+                        'C:/Windows/Fonts/arial.ttf',  # Fallback
+                    ]
+                else:
+                    # Generic fallback paths
+                    font_paths = [
+                        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+                        '/System/Library/Fonts/Helvetica.ttc',
+                        '/Windows/Fonts/arial.ttf',
+                    ]
+                
                 font = None
                 for font_path in font_paths:
                     if os.path.exists(font_path):
-                        # Calculate font size based on scale (approximate)
-                        font_size = int(font_scale * 30)  # Adjust multiplier as needed
-                        font = ImageFont.truetype(font_path, font_size)
-                        break
+                        try:
+                            # Calculate font size based on scale (approximate)
+                            font_size = int(font_scale * 30)  # Adjust multiplier as needed
+                            # For .ttc files, we may need to specify font index (0 is usually fine)
+                            if font_path.endswith('.ttc'):
+                                font = ImageFont.truetype(font_path, font_size, index=0)
+                            else:
+                                font = ImageFont.truetype(font_path, font_size)
+                            print(f"Debug: Using font: {font_path}")
+                            break
+                        except Exception as e:
+                            print(f"Debug: Failed to load font {font_path}: {e}")
+                            continue
                 
                 if font is None:
                     # Fallback to default font
+                    print("Debug: Using default font (may not support Chinese)")
                     font = ImageFont.load_default()
-            except:
+            except Exception as e:
+                print(f"Debug: Font loading error: {e}")
                 font = ImageFont.load_default()
             
             x, y = position
@@ -448,20 +615,46 @@ class TrashDetector:
         image_base64 = base64.b64encode(buffer).decode('utf-8')
         return image_base64
     
-    def _load_prompt(self):
-        """Load prompt from prompt.txt file"""
-        prompt_file = Path(__file__).parent / "prompt.txt"
-        if not prompt_file.exists():
-            raise FileNotFoundError(
-                f"Prompt file not found: {prompt_file}\n"
-                f"Please create prompt.txt in the project root directory."
-            )
+    def _load_prompt(self, prompt_file=None):
+        """
+        Load prompt from file (language-specific if available)
+        
+        Args:
+            prompt_file: Path to prompt file (default: prompt_{language}.txt or prompt.txt)
+            
+        Returns:
+            str: Prompt text
+        """
+        if prompt_file is None:
+            # Try language-specific prompt first, fallback to default
+            lang_prompt_file = f"prompt_{self.language}.txt"
+            default_prompt_file = "prompt.txt"
+            
+            # Check in the same directory as this script
+            script_dir = Path(__file__).parent
+            lang_path = script_dir / lang_prompt_file
+            default_path = script_dir / default_prompt_file
+            
+            if lang_path.exists():
+                prompt_file = lang_path
+            elif default_path.exists():
+                prompt_file = default_path
+            else:
+                raise FileNotFoundError(
+                    f"Prompt file not found: {lang_prompt_file} or {default_prompt_file}\n"
+                    f"Please create prompt_{self.language}.txt or prompt.txt in the project root directory."
+                )
+        else:
+            prompt_file = Path(prompt_file)
+            if not prompt_file.exists():
+                raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
         
         try:
             with open(prompt_file, 'r', encoding='utf-8') as f:
                 prompt = f.read().strip()
                 if not prompt:
                     raise ValueError(f"Prompt file {prompt_file} is empty")
+                print(f"Loaded prompt from: {prompt_file.name}")
                 return prompt
         except Exception as e:
             raise RuntimeError(f"Failed to load prompt from {prompt_file}: {e}")
@@ -773,10 +966,10 @@ class TrashDetector:
             raise RuntimeError("Camera not initialized. Call initialize_camera() first.")
         
         print("\n" + "="*60)
-        print("INTERACTIVE MODE")
+        print(self.ui['interactive_mode'])
         print("="*60)
-        print("Press 'C' to capture and analyze")
-        print("Press 'Q' or ESC to quit")
+        print(self.ui['press_c_capture'])
+        print(self.ui['press_q_quit'])
         print("="*60 + "\n")
         
         # Create output directories
@@ -843,14 +1036,9 @@ class TrashDetector:
                             # Get category for display
                             category = results.get('category', '')
                             
-                            # Translate category to Spanish for display
-                            category_translations = {
-                                'Organic': 'ORGÁNICO',
-                                'Recyclables': 'INORGÁNICO',
-                                'Landfill': 'BASURA GENERAL',
-                                'Dangerous': 'PELIGROSO'
-                            }
-                            category_display = category_translations.get(category, category.upper() if category else '')
+                            # Translate category based on language
+                            lang_translations = self.category_translations.get(self.language, self.category_translations['es'])
+                            category_display = lang_translations.get(category, category.upper() if category else '')
                             
                             # Calculate text positions for centering
                             # Main category text (LARGE for accessibility)
@@ -916,7 +1104,7 @@ class TrashDetector:
                                         outline_color=(0, 0, 0), outline_thickness=2
                                     )
                         else:
-                            result_text = "NO TRASH DETECTED"
+                            result_text = self.ui['no_trash'].upper()
                             color = (0, 255, 0)  # Green
                             
                             # Center the "No trash" text
@@ -965,9 +1153,9 @@ class TrashDetector:
                         results_overlay['start_time'] = None
                         results_overlay['data'] = None
                 
-                cv2.putText(display_frame, "Press 'C' to capture, 'Q' to quit", 
+                cv2.putText(display_frame, self.ui['press_c_capture_q_quit'], 
                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(display_frame, f"Frame: {frame_count}", 
+                cv2.putText(display_frame, f"{self.ui['frame']}: {frame_count}", 
                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 
                 cv2.imshow("Trash Detector - Interactive Mode", display_frame)
@@ -990,7 +1178,7 @@ class TrashDetector:
                     flash_state['type'] = 'green'
                     
                     print("\n" + "-"*60)
-                    print("CAPTURING AND ANALYZING...")
+                    print(self.ui['capturing'])
                     print("-"*60)
                     
                     # Capture current frame
@@ -1002,7 +1190,7 @@ class TrashDetector:
                         print(f"Image saved to: {image_path}")
                     
                     # Analyze the frame
-                    print("Analyzing image with Gemini...")
+                    print(self.ui['analyzing'])
                     results = self.detect_trash(frame)
                     
                     # Save results to results subdirectory
@@ -1042,7 +1230,11 @@ class TrashDetector:
                     
                     # Play text-to-speech if available (non-blocking)
                     if results.get('what_to_do'):
-                        self._text_to_speech(results.get('what_to_do'), async_mode=True)
+                        if self.tts_enabled:
+                            print(f"Debug: Playing TTS for: {results.get('what_to_do')[:50]}...")
+                            self._text_to_speech(results.get('what_to_do'), async_mode=True)
+                        else:
+                            print("Debug: TTS is disabled. Use --tts flag to enable.")
                 
                 frame_count += 1
                 
@@ -1059,7 +1251,11 @@ class TrashDetector:
             text: Text to convert to speech (should be in Spanish for what_to_do)
             async_mode: If True, generate audio in background thread (non-blocking)
         """
-        if not self.tts_enabled or not text:
+        if not self.tts_enabled:
+            print("Debug: TTS is not enabled. Use --tts flag and set ELEVENLABS_API_KEY.")
+            return
+        if not text:
+            print("Debug: No text provided for TTS.")
             return
         
         if async_mode:
@@ -1138,9 +1334,14 @@ class TrashDetector:
                     except:
                         pass
             else:
-                print(f"Warning: Eleven Labs API error: {response.status_code} - {response.text}")
+                error_msg = f"Warning: Eleven Labs API error: {response.status_code} - {response.text}"
+                print(error_msg)
+                print(f"Debug: TTS request failed. Check your ELEVENLABS_API_KEY and voice ID.")
         except Exception as e:
-            print(f"Warning: Text-to-speech failed: {e}")
+            error_msg = f"Warning: Text-to-speech failed: {e}"
+            print(error_msg)
+            import traceback
+            print(f"Debug: TTS error details: {traceback.format_exc()}")
     
     def _play_streaming_audio(self, response):
         """Play streaming audio as it arrives (lower latency)"""
@@ -1204,21 +1405,46 @@ class TrashDetector:
             system = platform.system()
             if system == "Linux":
                 # Try multiple audio players common on Linux/Raspberry Pi
+                audio_played = False
                 for player in ["mpg123", "mpg321", "ffplay", "aplay"]:
                     try:
-                        subprocess.run([player, file_path], 
-                                     stdout=subprocess.DEVNULL, 
-                                     stderr=subprocess.DEVNULL,
-                                     check=False)
-                        break
+                        result = subprocess.run([player, file_path], 
+                                              stdout=subprocess.DEVNULL, 
+                                              stderr=subprocess.DEVNULL,
+                                              check=False,
+                                              timeout=30)
+                        if result.returncode == 0:
+                            audio_played = True
+                            print(f"Debug: Audio played successfully using {player}")
+                            break
                     except FileNotFoundError:
                         continue
+                    except subprocess.TimeoutExpired:
+                        print(f"Warning: Audio player {player} timed out")
+                        continue
+                
+                if not audio_played:
+                    print("Warning: No audio player found. Install one of: mpg123, mpg321, ffplay, or aplay")
+                    print("  On Ubuntu/Debian: sudo apt-get install mpg123")
+                    print("  On Raspberry Pi: sudo apt-get install mpg123")
             elif system == "Darwin":  # macOS
-                subprocess.run(["afplay", file_path], check=False)
+                result = subprocess.run(["afplay", file_path], check=False, timeout=30)
+                if result.returncode == 0:
+                    print("Debug: Audio played successfully using afplay")
+                else:
+                    print(f"Warning: afplay returned error code: {result.returncode}")
             elif system == "Windows":
-                subprocess.run(["start", file_path], shell=True, check=False)
+                result = subprocess.run(["start", file_path], shell=True, check=False, timeout=30)
+                if result.returncode == 0:
+                    print("Debug: Audio played successfully")
+                else:
+                    print(f"Warning: Audio playback returned error code: {result.returncode}")
+        except subprocess.TimeoutExpired:
+            print("Warning: Audio playback timed out")
         except Exception as e:
             print(f"Warning: Could not play audio: {e}")
+            import traceback
+            print(f"Debug: Audio playback error details: {traceback.format_exc()}")
     
     def cleanup(self):
         """Release camera and GPIO resources"""
@@ -1258,6 +1484,8 @@ def main():
     parser.add_argument("--elevenlabs-api-key", type=str, help="Eleven Labs API key (or set ELEVENLABS_API_KEY env var)")
     parser.add_argument("--elevenlabs-voice-id", type=str, help="Eleven Labs voice ID (default: Rachel)")
     parser.add_argument("--elevenlabs-model", type=str, help="Eleven Labs model ID (default: eleven_turbo_v2_5 for low latency, or eleven_v3 for better quality)")
+    parser.add_argument("--language", "-l", type=str, default="es", 
+                       help="Language code for prompts and responses (default: es for Spanish, en for English, fr for French, de for German, zh for Chinese Simplified, zh-tw for Chinese Traditional)")
     parser.add_argument("--interactive", "-i", action="store_true", 
                        help="Interactive mode: show camera feed, press 'C' to capture, 'Q' to quit")
     
@@ -1288,7 +1516,8 @@ def main():
             enable_tts=args.tts,
             elevenlabs_api_key=args.elevenlabs_api_key,
             elevenlabs_voice_id=args.elevenlabs_voice_id,
-            elevenlabs_model=args.elevenlabs_model
+            elevenlabs_model=args.elevenlabs_model,
+            language=args.language
         )
         
         # Initialize camera

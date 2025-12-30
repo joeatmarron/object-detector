@@ -113,6 +113,7 @@ Available options:
 - `--tts`: Enable text-to-speech using Eleven Labs API
 - `--elevenlabs-api-key`: Eleven Labs API key (or set ELEVENLABS_API_KEY env var)
 - `--elevenlabs-voice-id`: Eleven Labs voice ID (optional, defaults to Rachel)
+- `--language` or `-l`: Language code for prompts and responses (default: `es` for Spanish, `en` for English, `fr` for French, `de` for German, `zh` for Chinese Simplified, `zh-tw` for Chinese Traditional)
 
 ### Examples
 
@@ -130,6 +131,37 @@ python3 trash_detector.py --model gemini-1.5-pro
 ```bash
 python3 trash_detector.py --list-models
 ```
+
+**Use a different language:**
+```bash
+# Spanish (default)
+python3 trash_detector.py --interactive --language es
+
+# English
+python3 trash_detector.py --interactive --language en
+
+# French
+python3 trash_detector.py --interactive --language fr
+
+# German
+python3 trash_detector.py --interactive --language de
+
+# Chinese (Simplified)
+python3 trash_detector.py --interactive --language zh
+
+# Chinese (Traditional)
+python3 trash_detector.py --interactive --language zh-tw
+```
+
+**Note:** The system will automatically look for language-specific prompt files:
+- `prompt_es.txt` for Spanish
+- `prompt_en.txt` for English
+- `prompt_fr.txt` for French
+- `prompt_de.txt` for German
+- `prompt_zh.txt` for Chinese (Simplified)
+- `prompt_zh-tw.txt` for Chinese (Traditional)
+
+If a language-specific prompt file doesn't exist, it will fall back to `prompt.txt`. You can create language-specific prompts by copying `prompt.txt` and translating it to the desired language.
 
 This will show you all available models that support vision/generateContent. Common model names:
 - `gemini-1.5-flash` (fast, recommended)
