@@ -1434,11 +1434,83 @@ class TrashDetector:
                 else:
                     print(f"Warning: afplay returned error code: {result.returncode}")
             elif system == "Windows":
-                result = subprocess.run(["start", file_path], shell=True, check=False, timeout=30)
-                if result.returncode == 0:
-                    print("Debug: Audio played successfully")
-                else:
-                    print(f"Warning: Audio playback returned error code: {result.returncode}")
+                # Try multiple methods to play audio without opening a window
+                audio_played = False
+                
+                # Method 1: Try ffplay (from ffmpeg) - plays without opening window
+                try:
+                    result = subprocess.run(
+                        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=30,
+                        check=False
+                    )
+                    if result.returncode == 0:
+                        audio_played = True
+                        print("Debug: Audio played successfully using ffplay")
+                except FileNotFoundError:
+                    pass
+                except Exception:
+                    pass
+                
+                # Method 2: Use PowerShell with .NET MediaPlayer (plays directly, no window)
+                if not audio_played:
+                    try:
+                        # Convert to absolute path and normalize for PowerShell
+                        abs_path = os.path.abspath(file_path).replace("\\", "/")
+                        # Create a PowerShell script that plays the audio
+                        ps_script = f"""
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName presentationCore
+$mediaPlayer = New-Object system.windows.media.mediaplayer
+$uri = [System.Uri]::new('file:///{abs_path}')
+$mediaPlayer.open($uri)
+$mediaPlayer.Play()
+while ($mediaPlayer.Position -lt $mediaPlayer.NaturalDuration.TimeSpan) {{
+    Start-Sleep -Milliseconds 100
+}}
+$mediaPlayer.Stop()
+$mediaPlayer.Close()
+"""
+                        result = subprocess.run(
+                            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=30,
+                            check=False
+                        )
+                        if result.returncode == 0:
+                            audio_played = True
+                            print("Debug: Audio played successfully using PowerShell MediaPlayer")
+                    except Exception as e:
+                        print(f"Debug: PowerShell MediaPlayer failed: {e}")
+                
+                # Method 3: Try Windows Media Player in silent mode (fallback)
+                if not audio_played:
+                    try:
+                        # Use wmplayer with /play and /close flags to play without visible window
+                        wmp_path = os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Windows Media Player", "wmplayer.exe")
+                        if not os.path.exists(wmp_path):
+                            wmp_path = os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Windows Media Player", "wmplayer.exe")
+                        
+                        if os.path.exists(wmp_path):
+                            result = subprocess.run(
+                                [wmp_path, "/play", "/close", file_path],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                timeout=30,
+                                check=False
+                            )
+                            if result.returncode == 0:
+                                audio_played = True
+                                print("Debug: Audio played successfully using Windows Media Player")
+                    except Exception:
+                        pass
+                
+                if not audio_played:
+                    print("Warning: Could not play audio on Windows. Try installing ffmpeg (ffplay) for better audio playback.")
+                    print("  Download from: https://ffmpeg.org/download.html")
         except subprocess.TimeoutExpired:
             print("Warning: Audio playback timed out")
         except Exception as e:
