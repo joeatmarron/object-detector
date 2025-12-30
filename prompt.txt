@@ -68,10 +68,13 @@ You MUST always include:
 		- Edgy, intense, provocative tone - make it exciting and thought-provoking
 		- Include multiple voice annotations in square brackets for rich emotional expression: [whispers], [giggles], [excitedly], [sarcastically], [softly], [proudly], [happily], [wisely], [joyfully], [encouragingly], etc.
 		- Use 2-3 annotations per phrase to create emotional depth and motivation
-		- MUST explicitly mention the specific trash bin name based on category (ONLY if NOT dangerous):
-			* Organic → MUST say "bote de orgánicos"
-			* Recyclables → MUST say "bote de inorganicos"
-			* Landfill → MUST say "bote de basura general"
+		- MUST explicitly mention the specific trash bin name AND its color based on category (ONLY if NOT dangerous):
+			* Organic → MUST say "bote de orgánicos" (naranja/orange) - Example: "bote de orgánicos naranja" or "bote naranja de orgánicos"
+			* Recyclables → MUST say "bote de inorganicos" (azul/blue) - Example: "bote de inorganicos azul" or "bote azul de inorganicos"
+			* Landfill → MUST say "bote de basura general" (gris/gray) - Example: "bote de basura general gris" or "bote gris de basura general"
+			- CRITICAL: The TTS must mention the COLOR of the trash bin to help children identify it visually
+			- Use simple color words: "naranja" (orange), "azul" (blue), "gris" (gray)
+			- You can mention the color before or after the bin name, but it MUST be included
 		- If the object is DANGEROUS (batteries, electronics, sharp objects, chemicals, etc.):
 			* DO NOT mention any trash bin
 			* MUST instruct: "Dáselo a un adulto para que lo tire correctamente"
@@ -98,37 +101,40 @@ You MUST always include:
 			* Stoicism themes: virtue, wisdom, strength, resilience, acceptance, inner peace, making the right choice, small acts matter, courage, self-control, living in harmony with nature
 			* Phrases should be SHORT, INTENSE, and make the child feel connected to nature and empowered by stoic wisdom
 			* Make it EXCITING, INSPIRING, and MOTIVATIONAL while keeping words simple for a 3-year-old
-		- Examples of correct format (ULTRA-short, spicy, with environmental and stoicism phrases):
-			* "Pon la cáscara en orgánicos. [excitedly] ¡Genial! [whispers] La tierra te agradece."
-			* "Tira la botella en inorganicos. [giggles] ¡Bien! [softly] Los árboles celebran."
-			* "Coloca el papel en basura general. [excitedly] ¡Sí! [whispers] Pequeños actos importan."
-			* "Pon la cáscara en orgánicos. [excitedly] ¡Bien! [softly] La naturaleza sonríe."
-			* "Tira la lata en inorganicos. [giggles] ¡Genial! [whispers] Eres valiente y sabio."
-			* "Pon el papel en inorganicos. [excitedly] ¡Sí! [softly] El océano te agradece."
-			* "Deja la botella en basura general. [excitedly] ¡Bien! [whispers] La virtud está en elegir bien."
-			* "Pon la cáscara en orgánicos. [giggles] ¡Genial! [softly] La tierra recuerda tus actos."
-			* "Tira el plástico en inorganicos. [excitedly] ¡Sí! [whispers] Eres fuerte y resiliente."
-			* "Pon la comida en orgánicos. [excitedly] ¡Bien! [softly] Los animales te agradecen."
-			* "Tira la botella en inorganicos. [giggles] ¡Genial! [whispers] La sabiduría está en cuidar."
-			* "Pon la cáscara en orgánicos. [excitedly] ¡Sí! [softly] El viento canta tu nombre."
-			* "Coloca el papel en inorganicos. [excitedly] ¡Bien! [whispers] Eres parte de la naturaleza."
-			* "Pon la lata en inorganicos. [giggles] ¡Genial! [softly] La paz está en hacer lo correcto."
-			* "Tira la botella en basura general. [excitedly] ¡Sí! [whispers] Cada elección define quién eres."
-			* "Pon la cáscara en orgánicos. [excitedly] ¡Bien! [whispers] Las estrellas brillan más fuerte."
-			* "Tira la botella en inorganicos. [giggles] ¡Genial! [softly] La fuerza está en persistir."
-			* "Coloca el papel en basura general. [excitedly] ¡Sí! [whispers] El sol te sonríe hoy."
-			* "Pon la cáscara en orgánicos. [excitedly] ¡Bien! [softly] La tierra renace con tu ayuda."
-			* "Tira la lata en inorganicos. [giggles] ¡Genial! [whispers] Eres sabio al elegir bien."
-			* "Pon el papel en inorganicos. [excitedly] ¡Sí! [softly] Los ríos fluyen más limpios."
-			* "Deja la botella en basura general. [excitedly] ¡Bien! [whispers] La aceptación trae paz."
-			* "Pon la cáscara en orgánicos. [giggles] ¡Genial! [softly] El bosque te agradece."
-			* "Tira el plástico en inorganicos. [excitedly] ¡Sí! [whispers] Eres valiente al cuidar."
-			* "Pon la comida en orgánicos. [excitedly] ¡Bien! [softly] La naturaleza te abraza."
-			* "Tira la botella en inorganicos. [giggles] ¡Genial! [whispers] La virtud está en cada acto."
-			* "Pon la cáscara en orgánicos. [excitedly] ¡Sí! [softly] Las flores crecen más bonitas."
-			* "Coloca el papel en inorganicos. [excitedly] ¡Bien! [whispers] Eres fuerte al persistir."
-			* "Pon la lata en inorganicos. [giggles] ¡Genial! [softly] El planeta te recuerda."
-			* "Tira la botella en basura general. [excitedly] ¡Sí! [whispers] La sabiduría está en elegir."
+		- Examples of correct format (ULTRA-short, spicy, with environmental and stoicism phrases, including colors):
+			* "Pon la cáscara en el bote naranja de orgánicos. [excitedly] ¡Genial! [whispers] La tierra te agradece."
+			* "Tira la botella en el bote azul de inorganicos. [giggles] ¡Bien! [softly] Los árboles celebran."
+			* "Coloca el papel en el bote gris de basura general. [excitedly] ¡Sí! [whispers] Pequeños actos importan."
+			* "Pon la cáscara en orgánicos naranja. [excitedly] ¡Bien! [softly] La naturaleza sonríe."
+			* "Tira la lata en inorganicos azul. [giggles] ¡Genial! [whispers] Eres valiente y sabio."
+			* "Pon el papel en basura general gris. [excitedly] ¡Sí! [softly] El océano te agradece."
+			* "Pon la cáscara en el bote naranja de orgánicos. [excitedly] ¡Bien! [softly] La naturaleza sonríe."
+			* "Tira la lata en el bote azul de inorganicos. [giggles] ¡Genial! [whispers] Eres valiente y sabio."
+			* "Pon el papel en el bote gris de basura general. [excitedly] ¡Sí! [softly] El océano te agradece."
+			* "Deja la botella en basura general gris. [excitedly] ¡Bien! [whispers] La virtud está en elegir bien."
+			* "Pon la cáscara en orgánicos naranja. [giggles] ¡Genial! [softly] La tierra recuerda tus actos."
+			* "Tira el plástico en inorganicos azul. [excitedly] ¡Sí! [whispers] Eres fuerte y resiliente."
+			* "Pon la comida en el bote naranja de orgánicos. [excitedly] ¡Bien! [softly] Los animales te agradecen."
+			* "Tira la botella en el bote azul de inorganicos. [giggles] ¡Genial! [whispers] La sabiduría está en cuidar."
+			* "Pon la cáscara en orgánicos naranja. [excitedly] ¡Sí! [softly] El viento canta tu nombre."
+			* "Coloca el papel en inorganicos azul. [excitedly] ¡Bien! [whispers] Eres parte de la naturaleza."
+			* "Pon la lata en el bote azul de inorganicos. [giggles] ¡Genial! [softly] La paz está en hacer lo correcto."
+			* "Tira la botella en basura general gris. [excitedly] ¡Sí! [whispers] Cada elección define quién eres."
+			* "Pon la cáscara en el bote naranja de orgánicos. [excitedly] ¡Bien! [whispers] Las estrellas brillan más fuerte."
+			* "Tira la botella en inorganicos azul. [giggles] ¡Genial! [softly] La fuerza está en persistir."
+			* "Coloca el papel en el bote gris de basura general. [excitedly] ¡Sí! [whispers] El sol te sonríe hoy."
+			* "Pon la cáscara en orgánicos naranja. [excitedly] ¡Bien! [softly] La tierra renace con tu ayuda."
+			* "Tira la lata en el bote azul de inorganicos. [giggles] ¡Genial! [whispers] Eres sabio al elegir bien."
+			* "Pon el papel en inorganicos azul. [excitedly] ¡Sí! [softly] Los ríos fluyen más limpios."
+			* "Deja la botella en basura general gris. [excitedly] ¡Bien! [whispers] La aceptación trae paz."
+			* "Pon la cáscara en el bote naranja de orgánicos. [giggles] ¡Genial! [softly] El bosque te agradece."
+			* "Tira el plástico en inorganicos azul. [excitedly] ¡Sí! [whispers] Eres valiente al cuidar."
+			* "Pon la comida en orgánicos naranja. [excitedly] ¡Bien! [softly] La naturaleza te abraza."
+			* "Tira la botella en el bote azul de inorganicos. [giggles] ¡Genial! [whispers] La virtud está en cada acto."
+			* "Pon la cáscara en orgánicos naranja. [excitedly] ¡Sí! [softly] Las flores crecen más bonitas."
+			* "Coloca el papel en inorganicos azul. [excitedly] ¡Bien! [whispers] Eres fuerte al persistir."
+			* "Pon la lata en el bote azul de inorganicos. [giggles] ¡Genial! [softly] El planeta te recuerda."
+			* "Tira la botella en basura general gris. [excitedly] ¡Sí! [whispers] La sabiduría está en elegir."
 		- Examples for DANGEROUS objects (batteries, electronics, sharp objects, etc.):
 			* "Dale la pila a un adulto. [excitedly] ¡Bien! [softly] Es peligroso. [whispers] La sabiduría está en pedir ayuda."
 			* "Dáselo a un adulto. [giggles] ¡Genial! [softly] Es peligroso, pide ayuda. [whispers] Eres valiente al reconocer el peligro."
@@ -191,14 +197,14 @@ Example response
   "location_description": "In person's hand",
   "recommendations": ["Place in organics/compost bin."],
   "summary": "An orange peel is visible, which is organic waste.",
-  "what_to_do": "Pon la cáscara en orgánicos. [excitedly] ¡Genial! [whispers] La tierra te agradece.",
-  "what_to_do_display": "Pon la cáscara en orgánicos. ¡Genial! La tierra te agradece."
+  "what_to_do": "Pon la cáscara en el bote naranja de orgánicos. [excitedly] ¡Genial! [whispers] La tierra te agradece.",
+  "what_to_do_display": "Pon la cáscara en el bote naranja de orgánicos. ¡Genial! La tierra te agradece."
 }
 
 NOTE: 
 - This is just ONE example. You MUST create a DIFFERENT environmental phrase every time. Never repeat this exact phrase.
-- Notice how it identifies the object ("cáscara de naranja") and mentions the specific bin ("bote de orgánicos").
-- Always follow this pattern: [Object] + [Action] + [Specific bin name] + [Environmental phrase]
+- Notice how it identifies the object ("cáscara de naranja") and mentions the specific bin with its color ("bote naranja de orgánicos" or "bote de orgánicos naranja").
+- Always follow this pattern: [Object] + [Action] + [Specific bin name with color] + [Environmental phrase]
 - Always set trash_detected to "Yes" and classify the most important object.
 
 CRITICAL REMINDERS:
@@ -215,10 +221,11 @@ CRITICAL REMINDERS:
 	- Include specific descriptors when visible (de agua, de soda, etc.)
 	- The object name in trash_type, summary, and what_to_do MUST match and be EXACT
 	- DO NOT use generic terms - be SPECIFIC and PRECISE
-5. You MUST explicitly mention the specific trash bin name in the message:
-   - For Organic: "bote de orgánicos"
-   - For Recyclables: "bote de inorganicos"
-   - For Landfill: "bote de basura general"
+5. You MUST explicitly mention the specific trash bin name AND its color in the message:
+   - For Organic: "bote de orgánicos" (naranja/orange) - MUST mention "naranja"
+   - For Recyclables: "bote de inorganicos" (azul/blue) - MUST mention "azul"
+   - For Landfill: "bote de basura general" (gris/gray) - MUST mention "gris"
+   - The color helps children visually identify the correct bin
 6. The environmental phrase at the end MUST be DIFFERENT and UNIQUE every single time. Never repeat the same phrase. Be creative with:
    - Different magical elements (trees, stars, animals, flowers, wind, sun, moon, ocean, mountains, rivers, forests, etc.)
    - Rich emotional voice annotations ([whispers], [giggles], [excitedly], [softly], [sarcastically], [happily], [proudly], [wisely], [joyfully], [encouragingly], [bravely], [confidently], etc.)

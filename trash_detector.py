@@ -1045,12 +1045,12 @@ class TrashDetector:
                             text_height = 0  # Initialize for use in what_to_do positioning
                             if category and category_display:
                                 category_text = category_display  # Spanish category name, already uppercase
-                                # Use different colors for different categories (high contrast)
+                                # Use different colors for different categories (matching trash bin colors)
                                 category_colors = {
-                                    'Organic': (0, 255, 0),      # Green (BGR)
-                                    'Recyclables': (255, 255, 255), # White (BGR) - high contrast
-                                    'Landfill': (255, 255, 255),    # White (BGR) - high contrast
-                                    'Dangerous': (0, 0, 255)      # Red (BGR)
+                                    'Organic': (0, 140, 255),      # Orange (BGR) - matches naranja bin
+                                    'Recyclables': (255, 0, 0),    # Blue (BGR) - matches azul bin
+                                    'Landfill': (128, 128, 128),   # Gray (BGR) - matches gris bin
+                                    'Dangerous': (0, 0, 255)       # Red (BGR)
                                 }
                                 category_color = category_colors.get(category, (255, 255, 255))
                                 
@@ -1208,11 +1208,11 @@ class TrashDetector:
                     # Show category-based color flash for visual feedback (non-blocking)
                     category = results.get('category')
                     if category:
-                        # Define colors in BGR format
+                        # Define colors in BGR format (matching trash bin colors)
                         category_colors = {
-                            'Organic': (0, 165, 255),      # Orange (BGR)
-                            'Recyclables': (255, 0, 0),    # Blue (BGR)
-                            'Landfill': (128, 128, 128),  # Gray (BGR)
+                            'Organic': (0, 140, 255),      # Orange (BGR) - matches naranja bin
+                            'Recyclables': (255, 0, 0),    # Blue (BGR) - matches azul bin
+                            'Landfill': (128, 128, 128),   # Gray (BGR) - matches gris bin
                             'Dangerous': (0, 0, 255)       # Red (BGR) - for dangerous items
                         }
                         flash_color = category_colors.get(category, (128, 128, 128))
