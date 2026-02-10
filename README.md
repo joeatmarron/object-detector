@@ -102,7 +102,7 @@ python3 trash_detector.py --help
 Available options:
 - `--api-key`: Override API key from environment variable
 - `--camera`: Camera index (default: 0, use 1, 2, etc. for USB cameras)
-- `--model`: Gemini model name (default: gemini-2.0-flash-exp)
+- `--model`: Gemini model name (default: models/gemini-2.5-flash)
 - `--list-models`: List available models and exit
 - `--output-dir`: Output directory (default: output)
 - `--no-save`: Don't save captured images

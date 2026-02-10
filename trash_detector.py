@@ -54,6 +54,7 @@ load_dotenv()
 
 # Constants
 MODEL_ALTERNATIVES = [
+    "models/gemini-2.5-flash",
     "gemini-2.0-flash-exp",
     "gemini-1.5-flash",
     "gemini-1.5-pro",
@@ -87,14 +88,14 @@ ELEVENLABS_VOICES = [
 ]
 
 class TrashDetector:
-    def __init__(self, api_key=None, model_name="gemini-2.0-flash-exp", enable_gpio=False, led_pin=18, buzzer_pin=None, enable_tts=False, elevenlabs_api_key=None, elevenlabs_voice_id=None, elevenlabs_model=None, language="es"):
+    def __init__(self, api_key=None, model_name="models/gemini-2.5-flash", enable_gpio=False, led_pin=18, buzzer_pin=None, enable_tts=False, elevenlabs_api_key=None, elevenlabs_voice_id=None, elevenlabs_model=None, language="es"):
         """
         Initialize the Trash Detector
         
         Args:
             api_key: Google Gemini API key (or set GEMINI_API_KEY env var)
-            model_name: Gemini model to use (default: gemini-2.0-flash-exp)
-                       Common options: gemini-2.0-flash-exp, gemini-1.5-pro, gemini-pro-vision
+            model_name: Gemini model to use (default: models/gemini-2.5-flash)
+                       Common options: models/gemini-2.5-flash, gemini-2.0-flash-exp, gemini-1.5-pro, gemini-pro-vision
             enable_gpio: Enable GPIO hardware outputs (LED, buzzer, etc.)
             led_pin: GPIO pin number for LED (default: 18, BCM numbering)
             buzzer_pin: GPIO pin number for buzzer (optional, None to disable)
@@ -1544,8 +1545,8 @@ def main():
     parser = argparse.ArgumentParser(description="Trash Detector using Gemini Vision API")
     parser.add_argument("--api-key", type=str, help="Google Gemini API key (or set GEMINI_API_KEY env var)")
     parser.add_argument("--camera", type=int, default=0, help="Camera index (default: 0)")
-    parser.add_argument("--model", type=str, default="gemini-2.0-flash-exp", 
-                       help="Gemini model name (default: gemini-2.0-flash-exp). Use --list-models to see available models.")
+    parser.add_argument("--model", type=str, default="models/gemini-2.5-flash", 
+                           help="Gemini model name (default: models/gemini-2.5-flash). Use --list-models to see available models.")
     parser.add_argument("--list-models", action="store_true", help="List available models and exit")
     parser.add_argument("--output-dir", type=str, default="output", help="Output directory for images and results")
     parser.add_argument("--no-save", action="store_true", help="Don't save captured images")
